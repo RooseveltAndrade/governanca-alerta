@@ -1,25 +1,30 @@
 def identificar_destinatario(linha):
-    status = str(linha.get("STATUS ATUAL", "")).upper()
+    etapa = str(linha.get("STATUS ATUAL", "")).upper()
+    status_validacao = str(linha.get("STATUS VALIDAÇÃO", "")).upper()
 
-    if status == "PENDENTE GOVERNANÇA":
-        return [
-            "lucas@email.com",
-            "laisa@email.com",
-            "kleyton@email.com"
-        ]
+    # Só envia se estiver pendente ou em andamento
+    if status_validacao not in ["PENDENTE", "EM ANDAMENTO"]:
+        return []
 
-    elif status == "PENDENTE LIDER":
+    if "DIRETORIA DE SISTEMAS" in etapa:
+        return ["bahia@empresa.com"]
+
+    elif "DIRETORIA DE APOIO" in etapa:
+        return ["adriana@empresa.com"]
+
+    elif "LIDER" in etapa:
         lider = linha.get("LIDER USUARIO DO ACESSO")
         if lider:
             return [f"{lider.lower().replace(' ', '.')}@empresa.com"]
 
-    elif status == "PENDENTE DIRETORIA":
+    elif "GOVERNANÇA" in etapa:
         return [
-            "bahia@empresa.com",
-            "adriana@empresa.com"
+            "lucas@empresa.com",
+            "laisa@empresa.com",
+            "kleyton@empresa.com"
         ]
 
-    elif status == "APROVAÇÃO ÁREA RESPONSÁVEL":
+    elif "ÁREA RESPONSÁVEL" in etapa:
         responsavel = linha.get("USUÁRIO RESPONSÁVEL")
         if responsavel:
             return [f"{responsavel.lower().replace(' ', '.')}@empresa.com"]
