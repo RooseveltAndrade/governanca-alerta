@@ -5,7 +5,7 @@ from services.envio_email import enviar_email
 
 def executar():
 
-    caminho_planilha = "C:\Users\Downloads"
+    caminho_planilha = "C:\\Users\\Downloads\\planilha_chamados.xlsx"
 
     print("Carregando planilha...")
     df = carregar_planilha(caminho_planilha)
@@ -15,8 +15,8 @@ def executar():
     for index, linha in df.iterrows():
 
         try:
-            id_chamado = linha.get("ID Chamado")
-            status = linha.get("Status")
+            id_chamado = linha.get("ID")
+            status = linha.get("STATUS ATUAL")
 
             if not id_chamado or not status:
                 continue
