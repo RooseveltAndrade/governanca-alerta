@@ -1,19 +1,23 @@
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
 
-@dataclass
+load_dotenv()
+
+
+@dataclass(frozen=True)
 class EmailConfig:
-    # =========================
-    # CONFIGURAÇÃO SMTP
-    # =========================
+    # ======================================================
+    # 🔹 CONFIGURAÇÃO SMTP
+    # ======================================================
     SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.gpssa.com.br")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True") == "True"
     SMTP_USE_SSL: bool = os.getenv("SMTP_USE_SSL", "False") == "True"
 
-    # =========================
-    # USUÁRIO PADRÃO
-    # =========================
+    # ======================================================
+    # 🔹 USUÁRIO PADRÃO
+    # ======================================================
     SMTP_USERNAME: str = os.getenv(
         "SMTP_USERNAME",
         "roosevelt.pimentel@gpssa.com.br"
@@ -21,9 +25,9 @@ class EmailConfig:
 
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 
-    # =========================
-    # EMAILS PADRÃO DO SISTEMA
-    # =========================
+    # ======================================================
+    # 🔹 EMAIL PADRÃO DO SISTEMA
+    # ======================================================
     DEFAULT_FROM_EMAIL: str = os.getenv(
         "DEFAULT_FROM_EMAIL",
         "roosevelt.pimentel@gpssa.com.br"
@@ -34,6 +38,23 @@ class EmailConfig:
         "roosevelt.pimentel@gpssa.com.br"
     )
 
+    # ======================================================
+    # 🔹 EMAILS FIXOS DE APROVAÇÃO
+    # ======================================================
+    GOVERNANCA_TI: tuple[str, ...] = (
+        os.getenv("EMAIL_GOV_LUCAS", "lucas@empresa.com"),
+        os.getenv("EMAIL_GOV_LAISA", "laisa@empresa.com"),
+        os.getenv("EMAIL_GOV_KLEYTON", "kleyton@empresa.com"),
+    )
 
-# Instância global para importar no projeto
+    DIRETORIA_SISTEMAS: tuple[str, ...] = (
+        os.getenv("EMAIL_DIR_SISTEMAS", "bahia@empresa.com"),
+    )
+
+    DIRETORIA_APOIO: tuple[str, ...] = (
+        os.getenv("EMAIL_DIR_APOIO", "adriana@empresa.com"),
+    )
+
+
+# Instância global
 email_config = EmailConfig()

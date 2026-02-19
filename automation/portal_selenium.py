@@ -195,7 +195,8 @@ class PortalGPS:
 
         child_xpath = (
             "//span[contains(@class,'x-tree-node-text') and "
-            f"contains(normalize-space(), '{safe_child}')]")
+            f"contains(normalize-space(), '{safe_child}')]"
+        )
 
         for _ in range(3 if self.fast_mode else 5):
             try:
@@ -337,20 +338,25 @@ class PortalGPS:
 
     def _organizar_download(self, filename):
         if not filename:
-            return
+            return None
+
         now = time.localtime()
-        mes = self._mes_pt(time.localtime())
+        mes = self._mes_pt(now)  # ✅ usa o "now" que você já calculou
         dia = time.strftime("%d-%m-%Y", now)
+
         destino_dir = os.path.join(self.download_dir, mes, dia)
         os.makedirs(destino_dir, exist_ok=True)
 
         origem = os.path.join(self.download_dir, filename)
         destino = os.path.join(destino_dir, filename)
+
         try:
             shutil.move(origem, destino)
             print(f"Arquivo movido para: {destino}")
-        except Exception:
-            pass
+            return destino  # ✅ caminho final completo
+        except Exception as e:
+            print(f"Erro ao mover arquivo: {e}")
+            return None
 
     # =====================================================
     # 🔹 FLUXO COMPLETO
@@ -395,7 +401,6 @@ class PortalGPS:
         print("✅ Exportação acionada!")
 
         arquivos_antes = set(os.listdir(self.download_dir))
-        print("Arquivos antes do download:", list(arquivos_antes))
 
         # remove arquivos antigos do mesmo relatório para garantir download novo
         for f in list(arquivos_antes):
@@ -406,7 +411,12 @@ class PortalGPS:
                     pass
 
         filename = self.wait_download_complete(timeout=90)
-        self._organizar_download(filename)
+        caminho_final = self._organizar_download(filename)
+
+        if not caminho_final:
+            raise Exception("Não foi possível organizar o arquivo baixado.")
+
+        return caminho_final  # ✅ retorna caminho final
 
     # =====================================================
     # 🔹 EXECUÇÃO
@@ -416,11 +426,13 @@ class PortalGPS:
         try:
             self.iniciar_driver()
             self.login()
-            self.exportar_relatorio_pendentes()
+            caminho_final = self.exportar_relatorio_pendentes()
+            return caminho_final  # ✅ retorna para ser usado depois (ler planilha / enviar emails)
         finally:
-            pass
-            self.encerrar()  # descomente para fechar automático
+            self.encerrar()
+
 
 if __name__ == "__main__":
     portal = PortalGPS(fast_mode=True)
-    portal.executar()
+    caminho = portal.executar()
+    print("✅ Caminho final do arquivo:", caminho)
