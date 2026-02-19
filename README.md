@@ -34,7 +34,7 @@ Envio de Notificação
 
 ## 📂 Estrutura do Projeto
 
-```text
+```bash
 governanca-alerta/
 │
 ├── automation/
@@ -55,6 +55,46 @@ governanca-alerta/
 ├── .env                          # Variáveis sensíveis
 └── requirements.txt
 ```
+## 🐍 Ambiente Virtual (venv)
+
+Recomendado usar um ambiente virtual para isolar dependências.
+
+### Windows (PowerShell)
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+## Windows (CMD)
+```bat
+python -m venv .venv
+.\.venv\Scripts\activate.bat
+pip install -r requirements.txt
+```
+## Linux/macOS
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+## Para sair do ambiente virtual:
+```bash
+deactivate
+```
+```nginx
+E não esquece de garantir que a venv não vai pro Git:
+
+**.gitignore**
+```gitignore
+.venv/
+venv/
+.env
+__pycache__/
+*.pyc
+
+```
+
 ---
 ## 📥 Download Automático
 
@@ -69,12 +109,12 @@ A automação:
 4 - Aguarda conclusão do download
 
 5 - Organiza o arquivo em:
-```text
+```php-template
 planilhas/<mes>/<dia-mes-ano>/
 ```
 
 Exemplo:
-```text
+```makefile
 C:\governanca-alerta\planilhas\fev\19-02-2026\
 ```
 ---
@@ -106,7 +146,7 @@ Para ativar envio real:
 
 No .env:
 
-```text
+```ini
 DRY_RUN=False
 ```
 
@@ -130,7 +170,7 @@ SMTP configurado via config.py.
 
 Instalar com:
 
-```text
+```bash
 pip install -r requirements.txt
 ```
 Principais:
@@ -149,7 +189,7 @@ Principais:
 
 ## 🚀 Executar
 
-```text
+```bash
 python main.py
 ```
 
