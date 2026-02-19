@@ -32,7 +32,7 @@ Mapeamento Nome → Email
 Envio de Notificação
 ```
 
-📂 Estrutura do Projeto
+## 📂 Estrutura do Projeto
 
 ```text
 governanca-alerta/
@@ -56,7 +56,7 @@ governanca-alerta/
 └── requirements.txt
 ```
 ---
-📥 Download Automático
+## 📥 Download Automático
 
 A automação:
 
@@ -78,7 +78,7 @@ Exemplo:
 C:\governanca-alerta\planilhas\fev\19-02-2026\
 ```
 ---
-🧠 Regras de Aprovação
+## 🧠 Regras de Aprovação
 
 A identificação é feita com base em:
 
@@ -98,7 +98,7 @@ DIRETORIA	Diretores (Sistemas + Apoio)
 
 ---
 
-📧 Envio de Email
+## 📧 Envio de Email
 
 Atualmente o envio está em modo simulação (DRY_RUN=True).
 
@@ -114,7 +114,7 @@ SMTP configurado via config.py.
 
 ---
 
-🔐 Segurança
+## 🔐 Segurança
 
 1 - Senhas ficam no .env
 
@@ -126,7 +126,7 @@ SMTP configurado via config.py.
 
 ---
 
-📦 Dependências
+## 📦 Dependências
 
 Instalar com:
 
@@ -147,7 +147,7 @@ Principais:
 
 ---
 
-🚀 Executar
+## 🚀 Executar
 
 ```text
 python main.py
@@ -155,7 +155,7 @@ python main.py
 
 ---
 
-👨‍💻 Desenvolvedor
+## 👨‍💻 Desenvolvedor
 
 Roosevelt Andrade (Projeto interno de automação de Governança de TI).
 
