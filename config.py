@@ -10,7 +10,7 @@ class EmailConfig:
     # ======================================================
     # 🔹 CONFIGURAÇÃO SMTP
     # ======================================================
-    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "smtp.gpssa.com.br")
+    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "True") == "True"
     SMTP_USE_SSL: bool = os.getenv("SMTP_USE_SSL", "False") == "True"
@@ -18,41 +18,34 @@ class EmailConfig:
     # ======================================================
     # 🔹 USUÁRIO PADRÃO
     # ======================================================
-    SMTP_USERNAME: str = os.getenv(
-        "SMTP_USERNAME",
-        "roosevelt.pimentel@gpssa.com.br"
-    )
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
 
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 
     # ======================================================
     # 🔹 EMAIL PADRÃO DO SISTEMA
     # ======================================================
-    DEFAULT_FROM_EMAIL: str = os.getenv(
-        "DEFAULT_FROM_EMAIL",
-        "roosevelt.pimentel@gpssa.com.br"
-    )
+    DEFAULT_FROM_EMAIL: str = os.getenv("DEFAULT_FROM_EMAIL", "")
 
-    ADMIN_EMAIL: str = os.getenv(
-        "ADMIN_EMAIL",
-        "roosevelt.pimentel@gpssa.com.br"
-    )
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "")
 
     # ======================================================
-    # 🔹 EMAILS FIXOS DE APROVAÇÃO
+    # 🔹 EMAILS FIXOS DE APROVAÇÃO (REGRAS OFICIAIS)
     # ======================================================
+
+    # ✅ GOVERNANÇA - TI
     GOVERNANCA_TI: tuple[str, ...] = (
-        os.getenv("EMAIL_GOV_LUCAS", "lucas@empresa.com"),
-        os.getenv("EMAIL_GOV_LAISA", "laisa@empresa.com"),
-        os.getenv("EMAIL_GOV_KLEYTON", "kleyton@empresa.com"),
+        os.getenv("EMAIL_GOV_LAIS", ""),
+        os.getenv("EMAIL_GOV_LUCAS", ""),
     )
 
+    # ✅ DIRETORIA (ambos até exportação individual)
     DIRETORIA_SISTEMAS: tuple[str, ...] = (
-        os.getenv("EMAIL_DIR_SISTEMAS", "bahia@empresa.com"),
+        os.getenv("EMAIL_DIR_ADRIANA", ""),
     )
 
     DIRETORIA_APOIO: tuple[str, ...] = (
-        os.getenv("EMAIL_DIR_APOIO", "adriana@empresa.com"),
+        os.getenv("EMAIL_DIR_THIAGO", ""),
     )
 
 

@@ -1,33 +1,62 @@
 import os
 import logging
 import pandas as pd
+from collections import defaultdict
 
 from automation.portal_selenium import PortalGPS
 from services.leitura_planilha import carregar_planilha
-from services.regras_aprovacao import identificar_destinatario
+from services.regras_aprovacao import identificar_destinatarios
+from services.diretorio_acessos import DiretorioAcessos
 from services.envio_email import enviar_email
 
+# ======================================================
+# 🔹 CONFIG LOG
+# ======================================================
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# ✅ Simulação controlada por .env
-# DRY_RUN=True -> não envia email
-# DRY_RUN=False -> envia email
 DRY_RUN = os.getenv("DRY_RUN", "True") == "True"
 
+# caminho da planilha de mapeamento ACESSO -> líder
+CAMINHO_DIRETORIO_ACESSOS = "data/Equipe Solucionadora.xlsx"
+
+
+# ======================================================
+# 🔹 MONTA CORPO DO EMAIL AGREGADO
+# ======================================================
+
+def _montar_corpo_agregado(itens: list[dict]) -> str:
+    linhas = []
+    for item in itens:
+        linhas.append(f"- Chamado {item['id']} | Status: {item['status']}")
+
+    return f"""
+Prezados,
+
+Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.
+
+Pendências:
+{os.linesep.join(linhas)}
+
+Solicitamos a verificação no portal.
+
+Atenciosamente,
+Sistema de Monitoramento
+""".strip()
+
+
+# ======================================================
+# 🔹 EXECUÇÃO PRINCIPAL
+# ======================================================
 
 def executar():
-    enviados = 0
-    pulados = 0
-    sem_destinatario = 0
-    erros = 0
 
-    # =====================================================
-    # 🔹 1️⃣ EXECUTA AUTOMAÇÃO E BAIXA PLANILHA
-    # =====================================================
+    # ==================================================
+    # 1️⃣ Baixa planilha pelo portal
+    # ==================================================
     logging.info("Iniciando automação do portal...")
 
     portal = PortalGPS(fast_mode=True)
@@ -39,67 +68,90 @@ def executar():
 
     logging.info(f"Planilha obtida com sucesso: {caminho_planilha}")
 
-    # =====================================================
-    # 🔹 2️⃣ CARREGA PLANILHA
-    # =====================================================
-    logging.info("Carregando planilha...")
+    # ==================================================
+    # 2️⃣ Carrega diretório de acessos (Área Responsável)
+    # ==================================================
+    try:
+        diretorio_acessos = DiretorioAcessos(CAMINHO_DIRETORIO_ACESSOS)
+        logging.info("Diretório de acessos carregado com sucesso.")
+    except Exception as e:
+        logging.error(f"Erro ao carregar diretório de acessos: {e}")
+        diretorio_acessos = None
+
+    # ==================================================
+    # 3️⃣ Lê planilha exportada
+    # ==================================================
     df = carregar_planilha(caminho_planilha)
     logging.info(f"{len(df)} registros encontrados.")
 
-    # =====================================================
-    # 🔹 3️⃣ PROCESSA REGISTROS
-    # =====================================================
+    # ==================================================
+    # 4️⃣ Agrega pendências por destinatário
+    # ==================================================
+    pendencias_por_email = defaultdict(list)
+
     for index, linha in df.iterrows():
         try:
             id_chamado = linha.get("ID")
             status = linha.get("STATUS ATUAL")
 
             if pd.isna(id_chamado) or pd.isna(status):
-                pulados += 1
                 continue
 
             status_txt = str(status).strip().upper()
+
             if status_txt == "APROVADO":
-                pulados += 1
                 continue
 
-            destinatarios = identificar_destinatario(linha)
+            destinatarios = identificar_destinatarios(
+                linha,
+                diretorio_acessos=diretorio_acessos
+            )
 
             if not destinatarios:
-                sem_destinatario += 1
-                logging.warning(f"Nenhum destinatário encontrado para chamado {id_chamado} (linha {index})")
+                status_atual = linha.get("STATUS ATUAL")
+                validacao = linha.get("VALIDAÇÃO")
+                if validacao is None:
+                    validacao = linha.get("VALIDACAO")
+                acesso = linha.get("ACESSO")
+                lider = linha.get("LIDER USUARIO DO ACESSO")
+
+                logging.warning(
+                    f"Nenhum destinatário encontrado para chamado {id_chamado} (linha {index}) | "
+                    f"status='{status_atual}' | validacao='{validacao}' | "
+                    f"acesso='{acesso}' | lider='{lider}'"
+                )
                 continue
 
-            assunto = f"Chamado {id_chamado} pendente de aprovação"
-
-            corpo = f"""
-Prezados,
-
-O chamado {id_chamado} encontra-se com o status "{status}"
-e está pendente de aprovação.
-
-Solicitamos a verificação no portal.
-
-Atenciosamente,
-Sistema de Monitoramento
-""".strip()
-
-            if DRY_RUN:
-                logging.info(f"[SIMULAÇÃO] Envio para {destinatarios} - Chamado {id_chamado}")
-            else:
-                logging.info(f"Enviando alerta para {destinatarios} - Chamado {id_chamado}")
-                ok = enviar_email(destinatarios, assunto, corpo)
-                if ok:
-                    enviados += 1
+            for email in destinatarios:
+                pendencias_por_email[email].append({
+                    "id": id_chamado,
+                    "status": str(status).strip()
+                })
 
         except Exception as e:
-            erros += 1
             logging.error(f"Erro ao processar linha {index}: {e}")
 
+    # ==================================================
+    # 5️⃣ Envia 1 email por destinatário
+    # ==================================================
+    if not pendencias_por_email:
+        logging.info("Nenhuma pendência encontrada para notificação.")
+        return
+
+    for email, itens in pendencias_por_email.items():
+
+        assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
+        corpo = _montar_corpo_agregado(itens)
+
+        if DRY_RUN:
+            logging.info(f"[SIMULAÇÃO] Envio para {email} | pendências={len(itens)}")
+        else:
+            logging.info(f"Enviando para {email} | pendências={len(itens)}")
+            enviar_email([email], assunto, corpo)
+
     logging.info(
-        f"Finalizado: enviados={enviados} pulados={pulados} sem_destinatario={sem_destinatario} erros={erros} DRY_RUN={DRY_RUN}"
+        f"Finalizado. Destinatários notificados (ou simulados): {len(pendencias_por_email)}"
     )
-
-
+        
 if __name__ == "__main__":
     executar()

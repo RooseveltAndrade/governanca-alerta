@@ -1,73 +1,155 @@
-import os
+# services/regras_aprovacao.py
+from __future__ import annotations
+
+import unicodedata
+from typing import Any
+
 from config import email_config
 
 
-def _to_upper(v) -> str:
-    return str(v or "").strip().upper()
-
-
-def _montar_email_por_nome(nome: str, dominio: str | None = None) -> str:
+def _norm_txt(v: Any) -> str:
     """
-    Regra temporária:
-    'JOAO DA SILVA' -> 'joao.da.silva@dominio'
-    Quando você tiver a lista oficial (nome->email), trocamos por lookup seguro.
+    Normaliza texto para comparação:
+    - None -> ""
+    - strip
+    - remove acentos
+    - upper
     """
-    dominio = dominio or os.getenv("EMAIL_DOMAIN", "empresa.com")
-
-    nome = (nome or "").strip().lower()
-    nome = " ".join(nome.split())
-    nome = nome.replace(" ", ".")
-    return f"{nome}@{dominio}" if nome else ""
+    s = str(v or "").strip()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return s.upper()
 
 
-def identificar_destinatario(linha) -> list[str]:
+def _norm_colname(name: str) -> str:
     """
-    Espera colunas normalizadas (via leitura_planilha.py):
-    - STATUS ATUAL
-    - STATUS VALIDACAO
-    - LIDER USUARIO DO ACESSO
-    - USUARIO RESPONSAVEL
+    Normaliza nome de coluna:
+    - remove acentos
+    - upper
+    - troca múltiplos espaços por 1
+    """
+    return " ".join(_norm_txt(name).split())
+
+
+def _get_col(linha, *candidatos: str, default=None):
+    """
+    Busca coluna por múltiplos nomes possíveis, tolerando:
+    - acentos
+    - espaços extras
+    - variações simples
+
+    Ex.: "VALIDAÇÃO", "VALIDACAO", "STATUS VALIDAÇÃO" etc.
+    """
+    # cria mapa {COL_NORMALIZADA: COL_ORIGINAL}
+    idx = getattr(linha, "index", [])
+    mapa = {_norm_colname(str(c)): str(c) for c in idx}
+
+    for nome in candidatos:
+        key = _norm_colname(nome)
+        col_real = mapa.get(key)
+        if col_real is not None:
+            val = linha.get(col_real)
+            if val is not None:
+                return val
+
+    return default
+
+
+def identificar_destinatarios(
+    linha,
+    diretorio_acessos=None,
+    debug: bool = False
+) -> list[str]:
+    """
+    Regras:
+    - STATUS ATUAL define para quem vai o email
+    - VALIDAÇÃO se estiver PENDENTE cobra por email/teams
+
+    Regras fixas:
+    - PENDENTE DIRETORIA -> Adriana + Thiago (fixos)
+    - PENDENTE GOVERNANÇA - TI -> Lais + Lucas (fixos)
+
+    Regras por lookup:
+    - PENDENTE LÍDER -> bate nome do líder na aba LIDERES
+    - PENDENTE ÁREA RESPONSÁVEL -> bate ACESSO na aba ACESSO e pega E-mail Líder
     """
 
-    etapa = _to_upper(linha.get("STATUS ATUAL"))
-    status_validacao = _to_upper(linha.get("STATUS VALIDACAO"))
+    # =========================
+    # 1) Base de decisão
+    # =========================
+    etapa = _norm_txt(_get_col(linha, "STATUS ATUAL", "STATUS_ATUAL", default=""))
+    validacao = _norm_txt(_get_col(linha, "VALIDAÇÃO", "VALIDACAO", default=""))
 
-    # Só envia se estiver pendente ou em andamento
-    if status_validacao not in ["PENDENTE", "EM ANDAMENTO"]:
+    if debug:
+        print(f"[DEBUG] STATUS ATUAL='{etapa}' | VALIDAÇÃO='{validacao}'")
+
+    # Só cobra se a validação estiver pendente/em andamento
+    if validacao not in ("PENDENTE", "EM ANDAMENTO"):
         return []
 
     # =========================
-    # GOVERNANÇA
+    # 2) Governança - TI (fixo)
+    #    cobre quando for qualquer variação que contenha GOVERNANCA e TI
+    #    (ex.: "PENDENTE GOVERNANÇA - TI", "INATIVAR ... GOVERNANÇA - TI", "ANÁLISE GOVERNANÇA - TI")
     # =========================
-    if "GOVERNANCA" in etapa:
-        # pega tanto: "PENDENTE GOVERNANÇA - TI" quanto "INATIVAR PENDENTE GOVERNANÇA - TI"
-        return list(email_config.GOVERNANCA_TI)
+    if "GOVERNANCA" in etapa and "TI" in etapa:
+        return [e for e in email_config.GOVERNANCA_TI if e]
 
     # =========================
-    # LÍDER
-    # =========================
-    if "LIDER" in etapa:
-        lider = linha.get("LIDER USUARIO DO ACESSO")
-        email = _montar_email_por_nome(lider)
-        return [email] if email else []
-
-    # =========================
-    # ÁREA RESPONSÁVEL
-    # =========================
-    if "AREA" in etapa:
-        # pega tanto: "PENDENTE ÁREA RESPONSÁVEL" quanto "INATIVAR PENDENTE PARA ÁREA"
-        responsavel = linha.get("USUARIO RESPONSAVEL")  # na planilha real existe "USUÁRIO RESPONSÁVEL"
-        email = _montar_email_por_nome(responsavel)
-        return [email] if email else []
-
-    # =========================
-    # DIRETORIA
+    # 3) Diretoria (fixo)
     # =========================
     if "DIRETORIA" in etapa:
-        # IMPORTANTE:
-        # No Excel exportado, não vem "Sistemas" vs "Apoio", vem só "PENDENTE DIRETORIA".
-        # Então, por enquanto, mandamos para ambos (Bahia + Adriana).
-        # Quando você confirmar como distinguir, refinamos.
-        return list(email_config.DIRETORIA_SISTEMAS) + list(email_config.DIRETORIA_APOIO)
+        # Regra atual: manda para os 2 fixos.
+        # Depois, quando o portal exportar "quem já aprovou",
+        # filtra e cobra só quem faltou.
+        return [e for e in (list(email_config.DIRETORIA_SISTEMAS) + list(email_config.DIRETORIA_APOIO)) if e]
+
+    # =========================
+    # 4) Área responsável (por ACESSO -> aba ACESSO)
+    # =========================
+    # aceita qualquer etapa que contenha AREA
+    if "AREA" in etapa:
+        acesso = _get_col(linha, "ACESSO", "Acesso", default="")
+
+        if debug:
+            print(f"[DEBUG] Regra ÁREA | ACESSO='{acesso}'")
+
+        if diretorio_acessos and acesso:
+            if hasattr(diretorio_acessos, "emails_por_acesso"):
+                emails = diretorio_acessos.emails_por_acesso(acesso)
+                return [e for e in emails if e] if emails else []
+
+            if hasattr(diretorio_acessos, "email_por_acesso"):
+                email = diretorio_acessos.email_por_acesso(acesso)
+                return [email] if email else []
+
+        return []
+
+    # =========================
+    # 5) Líder (por nome -> aba LIDERES)
+    # =========================
+    if "LIDER" in etapa:
+        nome_lider = _get_col(
+            linha,
+            "LIDER USUARIO DO ACESSO",
+            "LÍDER USUÁRIO DO ACESSO",
+            "LIDER USUÁRIO DO ACESSO",
+            "LIDER",
+            "LÍDER",
+            default=""
+        )
+
+        if debug:
+            print(f"[DEBUG] Regra LÍDER | nome_lider='{nome_lider}'")
+
+        if diretorio_acessos and nome_lider:
+            if hasattr(diretorio_acessos, "emails_por_lider"):
+                emails = diretorio_acessos.emails_por_lider(nome_lider)
+                return [e for e in emails if e] if emails else []
+
+            if hasattr(diretorio_acessos, "email_por_lider"):
+                email = diretorio_acessos.email_por_lider(nome_lider)
+                return [email] if email else []
+        return []
 
     return []
