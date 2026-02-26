@@ -152,6 +152,25 @@ DRY_RUN=False
 
 SMTP configurado via config.py.
 
+### Modo recomendado sem dependência de SMTP corporativo
+
+Também é possível enviar pelo Outlook Desktop local (Windows), usando a conta já logada no Outlook:
+
+```ini
+EMAIL_PROVIDER=outlook
+DRY_RUN=False
+```
+
+Requisitos do modo Outlook:
+
+1 - Outlook instalado no servidor/máquina
+
+2 - Conta de email logada no aplicativo Outlook
+
+3 - Sessão de usuário ativa durante a execução
+
+Se `EMAIL_PROVIDER` não for definido, o sistema mantém o comportamento padrão via SMTP.
+
 ---
 
 ## 🔐 Segurança
@@ -191,6 +210,66 @@ Principais:
 
 ```bash
 python main.py
+```
+
+---
+
+## 🕒 Automação no Windows Server (Task Scheduler)
+
+Para não rodar manualmente no terminal, use os scripts em `scripts/`:
+
+- `scripts/run_main.ps1`: executa `main.py` com Python da `.venv` e grava log em `logs/`
+- `scripts/install_task.ps1`: cria tarefa agendada diária no Windows
+
+### 1) Testar execução do script (manual)
+
+No PowerShell, na pasta do projeto:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_main.ps1
+```
+
+### 2) Criar a tarefa agendada
+
+Exemplo diário às 07:30:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_task.ps1 -TaskName "GovernancaAlertaAcessos" -StartTime "07:30"
+```
+
+Se quiser rodar com uma conta de serviço específica:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_task.ps1 -TaskName "GovernancaAlertaAcessos" -StartTime "07:30" -RunAsUser "DOMINIO\usuario.servico" -RunAsPassword "SUA_SENHA"
+```
+
+### 3) Validar se a tarefa foi criada
+
+```powershell
+schtasks /Query /TN "GovernancaAlertaAcessos" /V /FO LIST
+```
+
+### 4) Rodar imediatamente (teste)
+
+```powershell
+schtasks /Run /TN "GovernancaAlertaAcessos"
+```
+
+### 5) Logs da execução
+
+Os logs ficam em:
+
+```text
+logs/main_yyyyMMdd_HHmmss.log
+```
+
+### 6) Alterar horário ou remover tarefa
+
+- Alterar horário: rode novamente o `install_task.ps1` com novo `-StartTime` (ele sobrescreve por causa do `/F`)
+- Remover tarefa:
+
+```powershell
+schtasks /Delete /TN "GovernancaAlertaAcessos" /F
 ```
 
 ---

@@ -63,7 +63,7 @@ def identificar_destinatarios(
     """
     Regras:
     - STATUS ATUAL define para quem vai o email
-    - VALIDAÇÃO se estiver PENDENTE cobra por email/teams
+    - Não há filtro por coluna de VALIDAÇÃO
 
     Regras fixas:
     - PENDENTE DIRETORIA -> Adriana + Thiago (fixos)
@@ -78,14 +78,8 @@ def identificar_destinatarios(
     # 1) Base de decisão
     # =========================
     etapa = _norm_txt(_get_col(linha, "STATUS ATUAL", "STATUS_ATUAL", default=""))
-    validacao = _norm_txt(_get_col(linha, "VALIDAÇÃO", "VALIDACAO", default=""))
-
     if debug:
-        print(f"[DEBUG] STATUS ATUAL='{etapa}' | VALIDAÇÃO='{validacao}'")
-
-    # Só cobra se a validação estiver pendente/em andamento
-    if validacao not in ("PENDENTE", "EM ANDAMENTO"):
-        return []
+        print(f"[DEBUG] STATUS ATUAL='{etapa}'")
 
     # =========================
     # 2) Governança - TI (fixo)

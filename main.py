@@ -1,6 +1,10 @@
 import os
+import html
+import base64
 import logging
 import pandas as pd
+import unicodedata
+from pathlib import Path
 from collections import defaultdict
 
 from automation.portal_selenium import PortalGPS
@@ -22,30 +26,181 @@ DRY_RUN = os.getenv("DRY_RUN", "True") == "True"
 
 # caminho da planilha de mapeamento ACESSO -> líder
 CAMINHO_DIRETORIO_ACESSOS = "data/Equipe Solucionadora.xlsx"
+CAMINHO_IMAGEM_EMAIL = Path(__file__).resolve().parent / "image" / "imagem_email.png"
+CAMINHO_ASSINATURA_GIF = Path(__file__).resolve().parent / "image" / "assinatura_gif.gif"
+
+ASSINATURA_TEXTO = (
+    "\n\nGestão de Acessos de TI\n"
+    "Gestão de Acessos | Governança de TI\n"
+    "ti.co.gestao.de.acessos.ti@gpssa.com.br\n"
+    "Fale com a Laís no Teams | Fale com o Lucas no Teams\n"
+)
 
 
 # ======================================================
 # 🔹 MONTA CORPO DO EMAIL AGREGADO
 # ======================================================
 
-def _montar_corpo_agregado(itens: list[dict]) -> str:
-    linhas = []
+def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = False):
+
+    linhas_texto = []
+    linhas_html = []
+
     for item in itens:
-        linhas.append(f"- Chamado {item['id']} | Status: {item['status']}")
+        id_chamado = item.get("id", "")
+        tipo_usuario = item.get("tipo_usuario", "")
+        usuario_acesso = item.get("usuario_acesso", "")
+        acesso = item.get("acesso", "")
+        sistema = item.get("sistema", "")
 
-    return f"""
-Prezados,
+        linhas_texto.append(
+            f"- {id_chamado} | {tipo_usuario} | {usuario_acesso} | {acesso} | {sistema}"
+        )
 
-Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.
+        linhas_html.append(
+            "<tr>"
+            f"<td>{html.escape(str(id_chamado))}</td>"
+            f"<td>{html.escape(str(tipo_usuario))}</td>"
+            f"<td>{html.escape(str(usuario_acesso))}</td>"
+            f"<td>{html.escape(str(acesso))}</td>"
+            f"<td>{html.escape(str(sistema))}</td>"
+            "</tr>"
+        )
 
-Pendências:
-{os.linesep.join(linhas)}
+    observacao_texto = ""
+    observacao_html = ""
+    if incluir_observacao_lider:
+        observacao_texto = (
+            "\n\nObservação: Caso o chamado não seja aprovado no prazo de 3 dias, "
+            "contados a partir da data de abertura do chamado, ele será cancelado automaticamente."
+        )
+        observacao_html = (
+            "<p><strong>Observação:</strong> Caso o chamado não seja aprovado no prazo de 3 dias, "
+            "contados a partir da data de abertura do chamado, ele será cancelado automaticamente.</p>"
+        )
 
-Solicitamos a verificação no portal.
+    imagem_html = "(imagem do print)"
+    if CAMINHO_IMAGEM_EMAIL.exists():
+        try:
+            imagem_b64 = base64.b64encode(CAMINHO_IMAGEM_EMAIL.read_bytes()).decode("ascii")
+            imagem_html = (
+                f"<img src='data:image/png;base64,{imagem_b64}' "
+                "alt='Exemplo de ícone de ação' style='max-width:420px;height:auto;'>"
+            )
+        except Exception as e:
+            logging.warning(f"Não foi possível carregar imagem do email: {e}")
 
-Atenciosamente,
-Sistema de Monitoramento
-""".strip()
+    assinatura_html = (
+        "<p style='margin-top:18px;'><strong>Gestão de Acessos de TI</strong><br>"
+        "Gestão de Acessos | Governança de TI<br>"
+        "<a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a><br>"
+        "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br'>Fale com a Laís no Teams</a> | "
+        "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br'>Fale com o Lucas no Teams</a></p>"
+    )
+
+    inline_attachments = []
+
+    assinatura_gif_data = ""
+    if CAMINHO_ASSINATURA_GIF.exists():
+        try:
+            assinatura_gif_data = "cid:assinatura_gif"
+            inline_attachments.append(
+                {
+                    "cid": "assinatura_gif",
+                    "name": "assinatura_gif.gif",
+                    "content_type": "image/gif",
+                    "data": CAMINHO_ASSINATURA_GIF.read_bytes(),
+                }
+            )
+        except Exception as e:
+            logging.warning(f"Não foi possível carregar GIF da assinatura: {e}")
+
+    if assinatura_gif_data:
+        assinatura_margin_top = "4px" if incluir_observacao_lider else "6px"
+        assinatura_html = (
+            "<table role='presentation' cellpadding='0' cellspacing='0' "
+            f"style='margin-top:{assinatura_margin_top}; margin-left:auto; margin-right:auto; border-collapse:collapse;'>"
+            "<tr>"
+            "<td style='vertical-align:middle; padding-right:6px;'>"
+            f"<img src='{assinatura_gif_data}' alt='Assinatura Grupo GPS' width='145' style='width:145px; max-width:145px; height:auto; display:block;'>"
+            "</td>"
+            "<td style='vertical-align:middle; padding-top:0; font-family:Arial, sans-serif; color:#1f3352; text-align:left;'>"
+            "<div style='font-size:20px; line-height:1.1; font-weight:700; margin:0;'>Gestão de Acessos de TI</div>"
+            "<div style='margin-top:0; color:#666666; font-size:14px; line-height:1.1;'>Gestão de Acessos | Governança de TI</div>"
+            "<div style='margin-top:0; line-height:1.1;'><a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br' style='color:#1f4e9a; font-size:14px;'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a></div>"
+            "<div style='margin-top:0; font-size:13px; line-height:1.1;'>"
+            "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br' style='color:#1f4e9a;'>Fale com a Laís no Teams</a> | "
+            "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br' style='color:#1f4e9a;'>Fale com o Lucas no Teams</a>"
+            "</div>"
+            "</td>"
+            "</tr>"
+            "</table>"
+        )
+
+    corpo_texto = (
+        "Prezado(a),\n\n"
+        f"Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.\n\n"
+        "Para verificar, acesse o link https://portal.gpssa.com.br/RAR/CriacaoUsuario "
+        "e realize a análise da solicitação.\n"
+        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:\n"
+        "(imagem do print)\n\n"
+        "Pendências:\n"
+        "ID | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA\n"
+        f"{os.linesep.join(linhas_texto)}"
+        f"{observacao_texto}"
+        f"{ASSINATURA_TEXTO}"
+    )
+
+    corpo_html = (
+        "<div style='font-family:Arial, sans-serif; font-size:16px; color:#1a1a1a; line-height:1.35;'>"
+        "<p style='margin:0 0 8px 0;'>Prezado(a),</p>"
+        f"<p style='margin:0 0 8px 0;'>Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.</p>"
+        "<p style='margin:0 0 8px 0;'>Para verificar, acesse o link "
+        "<a href='https://portal.gpssa.com.br/RAR/CriacaoUsuario'>"
+        "https://portal.gpssa.com.br/RAR/CriacaoUsuario</a> "
+        "e realize a análise da solicitação.<br>"
+        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
+        f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
+        "<p style='margin:0 0 8px 0;'><strong>Pendências:</strong></p>"
+        "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse; margin:0;'>"
+        "<thead><tr>"
+        "<th>ID</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(linhas_html)}</tbody>"
+        "</table>"
+        f"{observacao_html}"
+        f"{assinatura_html}"
+        "</div>"
+    )
+
+    return corpo_texto, corpo_html, inline_attachments
+
+
+def _norm_txt(v) -> str:
+    s = str(v or "").strip()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return s.upper()
+
+
+def _norm_colname(name: str) -> str:
+    return " ".join(_norm_txt(name).split())
+
+
+def _get_col(linha, *candidatos: str, default=""):
+    idx = getattr(linha, "index", [])
+    mapa = {_norm_colname(str(c)): str(c) for c in idx}
+
+    for nome in candidatos:
+        key = _norm_colname(nome)
+        col_real = mapa.get(key)
+        if col_real is not None:
+            val = linha.get(col_real)
+            if val is None or (isinstance(val, float) and pd.isna(val)):
+                return default
+            return str(val).strip()
+
+    return default
 
 
 # ======================================================
@@ -115,17 +270,39 @@ def executar():
                 acesso = linha.get("ACESSO")
                 lider = linha.get("LIDER USUARIO DO ACESSO")
 
-                logging.warning(
-                    f"Nenhum destinatário encontrado para chamado {id_chamado} (linha {index}) | "
-                    f"status='{status_atual}' | validacao='{validacao}' | "
-                    f"acesso='{acesso}' | lider='{lider}'"
-                )
+                validacao_txt = str(validacao or "").strip().upper()
+                if validacao_txt == "VERIFICADO":
+                    logging.info(
+                        f"Chamado {id_chamado} já verificado (linha {index}) | "
+                        f"status='{status_atual}' | acesso='{acesso}' | lider='{lider}'"
+                    )
+                else:
+                    logging.warning(
+                        f"Nenhum destinatário encontrado para chamado {id_chamado} (linha {index}) | "
+                        f"status='{status_atual}' | validacao='{validacao}' | "
+                        f"acesso='{acesso}' | lider='{lider}'"
+                    )
                 continue
 
+            eh_lider = "LIDER" in _norm_txt(status)
+
             for email in destinatarios:
-                pendencias_por_email[email].append({
+                chave_envio = (email, eh_lider)
+                pendencias_por_email[chave_envio].append({
                     "id": id_chamado,
-                    "status": str(status).strip()
+                    "status": str(status).strip(),
+                    "tipo_usuario": _get_col(
+                        linha,
+                        "TIPO DE USUÁRIO",
+                        "TIPO DE USUARIO",
+                        "TIPO USUÁRIO",
+                        "TIPO USUARIO",
+                        "TIPO_USUARIO",
+                        default=""
+                    ),
+                    "usuario_acesso": _get_col(linha, "USUÁRIO DO ACESSO", "USUARIO DO ACESSO", default=""),
+                    "acesso": _get_col(linha, "ACESSO", default=""),
+                    "sistema": _get_col(linha, "SISTEMA", default=""),
                 })
 
         except Exception as e:
@@ -138,16 +315,25 @@ def executar():
         logging.info("Nenhuma pendência encontrada para notificação.")
         return
 
-    for email, itens in pendencias_por_email.items():
+    for (email, eh_lider), itens in pendencias_por_email.items():
 
         assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
-        corpo = _montar_corpo_agregado(itens)
+        corpo, corpo_html, inline_attachments = _montar_corpo_agregado(
+            itens,
+            incluir_observacao_lider=eh_lider,
+        )
 
         if DRY_RUN:
             logging.info(f"[SIMULAÇÃO] Envio para {email} | pendências={len(itens)}")
         else:
             logging.info(f"Enviando para {email} | pendências={len(itens)}")
-            enviar_email([email], assunto, corpo)
+            enviar_email(
+                [email],
+                assunto,
+                corpo,
+                corpo_html=corpo_html,
+                inline_attachments=inline_attachments,
+            )
 
     logging.info(
         f"Finalizado. Destinatários notificados (ou simulados): {len(pendencias_por_email)}"
