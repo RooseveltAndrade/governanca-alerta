@@ -1,4 +1,3 @@
-schtasks.exe /Query /TN $TaskName /V /FO LIST
 
 param(
     [string]$RunAsUser = "",
