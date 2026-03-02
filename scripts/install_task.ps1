@@ -1,6 +1,6 @@
+schtasks.exe /Query /TN $TaskName /V /FO LIST
+
 param(
-    [string]$TaskName = "GovernancaAlertaAcessos",
-    [string]$StartTime = "07:30",
     [string]$RunAsUser = "",
     [string]$RunAsPassword = "",
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
@@ -15,29 +15,34 @@ if (-not (Test-Path $runnerScript)) {
 
 $taskCommand = "`"powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$runnerScript`" -ProjectRoot `"$ProjectRoot`""
 
-$args = @(
-    "/Create",
-    "/TN", $TaskName,
-    "/TR", $taskCommand,
-    "/SC", "DAILY",
-    "/ST", $StartTime,
-    "/F"
-)
+$horarios = @("09:00", "14:00")
+$nomes = @("GovernancaAlertaAcessos_09h", "GovernancaAlertaAcessos_14h")
 
-if (-not [string]::IsNullOrWhiteSpace($RunAsUser)) {
-    $args += @("/RU", $RunAsUser)
+for ($i = 0; $i -lt $horarios.Count; $i++) {
+    $args = @(
+        "/Create",
+        "/TN", $nomes[$i],
+        "/TR", $taskCommand,
+        "/SC", "DAILY",
+        "/ST", $horarios[$i],
+        "/F"
+    )
 
-    if (-not [string]::IsNullOrWhiteSpace($RunAsPassword)) {
-        $args += @("/RP", $RunAsPassword)
+    if (-not [string]::IsNullOrWhiteSpace($RunAsUser)) {
+        $args += @("/RU", $RunAsUser)
+
+        if (-not [string]::IsNullOrWhiteSpace($RunAsPassword)) {
+            $args += @("/RP", $RunAsPassword)
+        }
+        else {
+            $args += @("/RP", "*")
+        }
     }
-    else {
-        $args += @("/RP", "*")
+
+    & schtasks.exe @args | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Falha ao criar tarefa agendada ($nomes[$i]). ExitCode=$LASTEXITCODE"
     }
-}
 
-& schtasks.exe @args | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "Falha ao criar tarefa agendada. ExitCode=$LASTEXITCODE"
+    schtasks.exe /Query /TN $nomes[$i] /V /FO LIST
 }
-
-schtasks.exe /Query /TN $TaskName /V /FO LIST

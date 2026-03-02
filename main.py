@@ -2,6 +2,8 @@ import os
 import html
 import base64
 import logging
+from datetime import datetime
+from config import email_config
 import pandas as pd
 import unicodedata
 from pathlib import Path
@@ -154,20 +156,18 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
     corpo_html = (
         "<div style='font-family:Arial, sans-serif; font-size:16px; color:#1a1a1a; line-height:1.35;'>"
         "<p style='margin:0 0 8px 0;'>Prezado(a),</p>"
-        f"<p style='margin:0 0 8px 0;'>Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.</p>"
-        "<p style='margin:0 0 8px 0;'>Para verificar, acesse o link "
-        "<a href='https://portal.gpssa.com.br/RAR/CriacaoUsuario'>"
-        "https://portal.gpssa.com.br/RAR/CriacaoUsuario</a> "
-        "e realize a análise da solicitação.<br>"
-        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
-        f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
-        "<p style='margin:0 0 8px 0;'><strong>Pendências:</strong></p>"
+        f"<p style='margin:0 0 8px 0;'>Você possui {len(itens)} aprovação(ões) pendente(s) no Portal Genéricos e Privilegiados.</p>"
         "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse; margin:0;'>"
         "<thead><tr>"
         "<th>ID</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
         "</tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
+        "<p style='margin:12px 0 8px 0;'>Para verificar o chamado, acesse "
+        "<a href='https://portal.gpssa.com.br/RAR/CriacaoUsuario'>Portal Genéricos e Privilegiados</a> "
+        "e realize a análise da solicitação de acesso.<br>"
+        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
+        f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
         f"{observacao_html}"
         f"{assinatura_html}"
         "</div>"
@@ -315,7 +315,16 @@ def executar():
         logging.info("Nenhuma pendência encontrada para notificação.")
         return
 
+    # Identifica horário atual (HH:MM)
+    hora_atual = datetime.now().strftime('%H:%M')
+    emails_diretoria = set(email_config.DIRETORIA_SISTEMAS) | set(email_config.DIRETORIA_APOIO)
+
     for (email, eh_lider), itens in pendencias_por_email.items():
+        # Regra: diretoria só recebe às 09:00 
+        is_diretoria = email in emails_diretoria
+        if is_diretoria and hora_atual != "09:00":
+            logging.info(f"Pulando envio para diretoria ({email}) fora do horário 09:00")
+            continue
 
         assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
         corpo, corpo_html, inline_attachments = _montar_corpo_agregado(
@@ -323,10 +332,11 @@ def executar():
             incluir_observacao_lider=eh_lider,
         )
 
+        tipo_destinatario = "Líder" if eh_lider else "Governança/Outro"
         if DRY_RUN:
-            logging.info(f"[SIMULAÇÃO] Envio para {email} | pendências={len(itens)}")
+            logging.info(f"[SIMULAÇÃO] Envio para {email} | pendências={len(itens)} | tipo={tipo_destinatario}")
         else:
-            logging.info(f"Enviando para {email} | pendências={len(itens)}")
+            logging.info(f"Enviando para {email} | pendências={len(itens)} | tipo={tipo_destinatario}")
             enviar_email(
                 [email],
                 assunto,
