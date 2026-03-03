@@ -157,7 +157,7 @@ DRY_RUN=False
 - Para redirecionar todos os envios para um e-mail de teste, use `SAFE_TEST_TO=seu@email.com`.
 
 **Alerta de Falha:**
-- Se algum e-mail não for enviado, um alerta automático é enviado para governanca.ti@gpssa.com.br com o motivo do erro.
+- Se algum e-mail não for enviado, um alerta automático é enviado para um email genérico da GPS com o motivo do erro.
 
 **Limitações Teams:**
 - Testes de envio para Teams 1:1 requerem permissões delegadas ou bot registrado. O envio para canais pode ser feito via webhook (não implementado por padrão).
