@@ -74,8 +74,8 @@ def _enviar_email_outlook(
         mail = outlook.CreateItem(0)
         mail.To = "; ".join(destinatarios)
         mail.Subject = assunto
-        # Adiciona Reply-To para o grupo
-        mail.ReplyRecipients.Add("infraregional@gpssa.com.br")
+        # Adiciona Reply-To para o grupo correto
+        mail.ReplyRecipients.Add(os.getenv("REPLY_TO_GROUP_EMAIL"))
         if corpo_html:
             html_final = corpo_html
             for item in inline_attachments or []:
@@ -161,7 +161,7 @@ def _enviar_email_graph(
                     {"emailAddress": {"address": d}} for d in destinatarios
                 ],
                 "replyTo": [
-                    {"emailAddress": {"address": "infraregional@gpssa.com.br"}}
+                    {"emailAddress": {"address": os.getenv("REPLY_TO_GROUP_EMAIL")}}
                 ],
             },
             "saveToSentItems": True,
