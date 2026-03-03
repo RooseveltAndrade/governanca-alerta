@@ -85,19 +85,6 @@ pip install -r requirements.txt
 ```bash
 deactivate
 ```
-```nginx
-E não esquece de garantir que a venv não vai pro Git:
-
-**.gitignore**
-```gitignore
-.venv/
-venv/
-.env
-__pycache__/
-*.pyc
-
-```
-
 ---
 ## 📥 Download Automático
 
