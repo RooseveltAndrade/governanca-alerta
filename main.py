@@ -139,6 +139,10 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
             "</table>"
         )
 
+
+    frase_duvidas = "\n\nEm caso de dúvidas, o time de Gestão de Acessos de TI está à disposição."
+    frase_duvidas_html = "<p style='margin:12px 0 8px 0;'>Em caso de dúvidas, o time de Gestão de Acessos de TI está à disposição.</p>"
+
     corpo_texto = (
         "Prezado(a),\n\n"
         f"Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.\n\n"
@@ -150,6 +154,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         "ID | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA\n"
         f"{os.linesep.join(linhas_texto)}"
         f"{observacao_texto}"
+        f"{frase_duvidas}"
         f"{ASSINATURA_TEXTO}"
     )
 
@@ -169,6 +174,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
         f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
         f"{observacao_html}"
+        f"{frase_duvidas_html}"
         f"{assinatura_html}"
         "</div>"
     )

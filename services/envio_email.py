@@ -255,26 +255,46 @@ def enviar_email(
         )
         return True
 
+
     if provider == "graph":
-        return _enviar_email_graph(
+        ok = _enviar_email_graph(
             destinatarios,
             assunto,
             corpo,
             corpo_html=corpo_html,
             inline_attachments=inline_attachments,
         )
+        if not ok:
+            enviar_email(
+                ["governanca.ti@gpssa.com.br"],
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (Graph). Assunto: {assunto}",
+            )
+        return ok
 
     if provider == "outlook":
-        return _enviar_email_outlook(
+        ok = _enviar_email_outlook(
             destinatarios,
             assunto,
             corpo,
             corpo_html=corpo_html,
             inline_attachments=inline_attachments,
         )
+        if not ok:
+            enviar_email(
+                ["governanca.ti@gpssa.com.br"],
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (Outlook). Assunto: {assunto}",
+            )
+        return ok
 
     if not username or not password:
         logging.error("SMTP_USERNAME/SMTP_PASSWORD não configurados no .env")
+        enviar_email(
+            ["governanca.ti@gpssa.com.br"],
+            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP não configurado). Assunto: {assunto}",
+        )
         return False
 
     msg = EmailMessage()
@@ -321,6 +341,7 @@ def enviar_email(
                 server.login(username, password)
                 server.send_message(msg)
 
+
         logging.info(f"Email enviado com sucesso -> {destinatarios}")
         return True
 
@@ -330,12 +351,27 @@ def enviar_email(
             "Possíveis causas: senha errada, SMTP AUTH bloqueado, MFA exigindo App Password.",
         )
         logging.error(f"Detalhe: {e}")
+        enviar_email(
+            ["governanca.ti@gpssa.com.br"],
+            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP Auth). Detalhe: {e}. Assunto: {assunto}",
+        )
         return False
 
     except smtplib.SMTPException as e:
         logging.error(f"Erro SMTP ao enviar email: {e}")
+        enviar_email(
+            ["governanca.ti@gpssa.com.br"],
+            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP). Detalhe: {e}. Assunto: {assunto}",
+        )
         return False
 
     except Exception as e:
         logging.exception(f"Erro inesperado ao enviar email: {e}")
+        enviar_email(
+            ["governanca.ti@gpssa.com.br"],
+            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+            f"O envio de e-mail para {', '.join(destinatarios)} falhou (Erro inesperado). Detalhe: {e}. Assunto: {assunto}",
+        )
         return False
