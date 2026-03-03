@@ -1,3 +1,15 @@
+from datetime import datetime, timedelta
+def _hora_em_janela(hora_atual, janela):
+    """
+    Verifica se hora_atual (str HH:MM) está dentro da janela (lista de tuplas [(inicio, fim)]).
+    """
+    hora_dt = datetime.strptime(hora_atual, "%H:%M")
+    for inicio, fim in janela:
+        inicio_dt = datetime.strptime(inicio, "%H:%M")
+        fim_dt = datetime.strptime(fim, "%H:%M")
+        if inicio_dt <= hora_dt <= fim_dt:
+            return True
+    return False
 import os
 import html
 import base64
@@ -34,7 +46,7 @@ CAMINHO_ASSINATURA_GIF = Path(__file__).resolve().parent / "image" / "assinatura
 ASSINATURA_TEXTO = (
     "\n\nGestão de Acessos de TI\n"
     "Gestão de Acessos | Governança de TI\n"
-    os.getenv("REPLY_TO_GROUP_EMAIL") + "\n"
+    "ti.co.gestao.de.acessos.ti@gpssa.com.br\n"
     "Fale com a Laís no Teams | Fale com o Lucas no Teams\n"
 )
 
@@ -95,7 +107,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
     assinatura_html = (
         "<p style='margin-top:18px;'><strong>Gestão de Acessos de TI</strong><br>"
         "Gestão de Acessos | Governança de TI<br>"
-        f"<a href='mailto:{os.getenv('REPLY_TO_GROUP_EMAIL')}'>{os.getenv('REPLY_TO_GROUP_EMAIL')}</a><br>"
+        "<a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a><br>"
         "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br'>Fale com a Laís no Teams</a> | "
         "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br'>Fale com o Lucas no Teams</a></p>"
     )
@@ -129,7 +141,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
             "<td style='vertical-align:middle; padding-top:0; font-family:Arial, sans-serif; color:#1f3352; text-align:left;'>"
             "<div style='font-size:20px; line-height:1.1; font-weight:700; margin:0;'>Gestão de Acessos de TI</div>"
             "<div style='margin-top:0; color:#666666; font-size:14px; line-height:1.1;'>Gestão de Acessos | Governança de TI</div>"
-            f"<div style='margin-top:0; line-height:1.1;'><a href='mailto:{os.getenv('REPLY_TO_GROUP_EMAIL')}' style='color:#1f4e9a; font-size:14px;'>{os.getenv('REPLY_TO_GROUP_EMAIL')}</a></div>"
+            "<div style='margin-top:0; line-height:1.1;'><a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br' style='color:#1f4e9a; font-size:14px;'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a></div>"
             "<div style='margin-top:0; font-size:13px; line-height:1.1;'>"
             "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br' style='color:#1f4e9a;'>Fale com a Laís no Teams</a> | "
             "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br' style='color:#1f4e9a;'>Fale com o Lucas no Teams</a>"
@@ -323,14 +335,21 @@ def executar():
 
     # Identifica horário atual (HH:MM)
     hora_atual = datetime.now().strftime('%H:%M')
+    janela_9 = [("09:00", "09:10")]
+    janela_14 = [("14:00", "14:10")]
+    janela_9_14 = janela_9 + janela_14
     emails_diretoria = set(email_config.DIRETORIA_SISTEMAS) | set(email_config.DIRETORIA_APOIO)
 
     for (email, eh_lider), itens in pendencias_por_email.items():
-        # Regra: diretoria só recebe às 09:00 
         is_diretoria = email in emails_diretoria
-        if is_diretoria and hora_atual != "09:00":
-            logging.info(f"Pulando envio para diretoria ({email}) fora do horário 09:00")
-            continue
+        if is_diretoria:
+            if not _hora_em_janela(hora_atual, janela_9):
+                logging.info(f"Pulando envio para diretoria ({email}) fora da janela 09:00-09:10")
+                continue
+        else:
+            if not _hora_em_janela(hora_atual, janela_9_14):
+                logging.info(f"Pulando envio para {email} fora da janela 09:00-09:10/14:00-14:10")
+                continue
 
         assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
         corpo, corpo_html, inline_attachments = _montar_corpo_agregado(
