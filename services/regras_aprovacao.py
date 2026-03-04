@@ -90,13 +90,17 @@ def identificar_destinatarios(
         return [e for e in email_config.GOVERNANCA_TI if e]
 
     # =========================
-    # 3) Diretoria (fixo)
+    # 3) Diretoria (pendente individual)
     # =========================
     if "DIRETORIA" in etapa:
-        # Regra atual: manda para os 2 fixos.
-        # Depois, quando o portal exportar "quem já aprovou",
-        # filtra e cobra só quem faltou.
-        return [e for e in (list(email_config.DIRETORIA_SISTEMAS) + list(email_config.DIRETORIA_APOIO)) if e]
+        pendente_sistemas = _norm_txt(_get_col(linha, "DIRETORIA DE SISTEMAS", default=""))
+        pendente_apoio = _norm_txt(_get_col(linha, "DIRETORIA APOIO", default=""))
+        emails = []
+        if "PENDENTE" in pendente_sistemas:
+            emails.extend([e for e in list(email_config.DIRETORIA_SISTEMAS) if e])
+        if "PENDENTE" in pendente_apoio:
+            emails.extend([e for e in list(email_config.DIRETORIA_APOIO) if e])
+        return emails
 
     # =========================
     # 4) Área responsável (por ACESSO -> aba ACESSO)
