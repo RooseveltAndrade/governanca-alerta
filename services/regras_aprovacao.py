@@ -93,8 +93,8 @@ def identificar_destinatarios(
     # 3) Diretoria (pendente individual)
     # =========================
     if "DIRETORIA" in etapa:
-        pendente_sistemas = _norm_txt(_get_col(linha, "DIRETORIA DE SISTEMAS", default=""))
-        pendente_apoio = _norm_txt(_get_col(linha, "DIRETORIA APOIO", default=""))
+        pendente_sistemas = _norm_txt(_get_col(linha, "DIRETORIA DE SISTEMAS", "DIRETORIA SISTEMAS", "DIRETORIA_SISTEMAS", default=""))
+        pendente_apoio = _norm_txt(_get_col(linha, "DIRETORIA APOIO", "DIRETORIA APOIO (CO)", "DIRETORIA_APOIO", default=""))
         emails = []
         if "PENDENTE" in pendente_sistemas:
             emails.extend([e for e in list(email_config.DIRETORIA_SISTEMAS) if e])
