@@ -10,8 +10,11 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from dotenv import load_dotenv
 import os
+import re
 import shutil
 import time
+
+from selenium.common.exceptions import ElementNotInteractableException
 
 
 class PortalGPS:
@@ -27,8 +30,10 @@ class PortalGPS:
         self.fast_mode = fast_mode
         self.driver = None
         self.wait = None
-        self.download_dir = os.path.abspath(os.path.join(os.getcwd(), "planilhas"))
-        os.makedirs(self.download_dir, exist_ok=True)
+        self.planilhas_dir = os.path.abspath(os.path.join(os.getcwd(), "planilhas"))
+        os.makedirs(self.planilhas_dir, exist_ok=True)
+        self._normalizar_estrutura_planilhas()
+        self.download_dir = self._garantir_diretorio_download()
 
     # =====================================================
     # 🔹 INICIALIZAÇÃO
@@ -68,6 +73,47 @@ class PortalGPS:
     def js_click(self, element):
         self.driver.execute_script("arguments[0].click();", element)
 
+    def wait_visible_enabled_element(self, by, value, timeout=20):
+        def _resolver(driver):
+            for elemento in driver.find_elements(by, value):
+                try:
+                    if elemento.is_displayed() and elemento.is_enabled():
+                        return elemento
+                except Exception:
+                    continue
+            return False
+
+        return WebDriverWait(self.driver, timeout).until(_resolver)
+
+    def preencher_input(self, element, value):
+        self.driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center'});",
+            element,
+        )
+
+        try:
+            element.click()
+        except Exception:
+            pass
+
+        try:
+            element.clear()
+            element.send_keys(value)
+            return
+        except ElementNotInteractableException:
+            pass
+
+        self.driver.execute_script(
+            "arguments[0].focus();"
+            "arguments[0].value = '';"
+            "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+            "arguments[0].value = arguments[1];"
+            "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+            "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+            element,
+            value,
+        )
+
     def wait_loading_mask(self, timeout=20):
         try:
             WebDriverWait(self.driver, timeout).until_not(
@@ -94,20 +140,28 @@ class PortalGPS:
         print("Acessando página de login...")
         self.driver.get(self.LOGIN_URL)
 
-        user_input = self.wait.until(
-            EC.presence_of_element_located((By.ID, "txtUsername-inputEl"))
+        self.wait.until(
+            lambda driver: driver.execute_script("return document.readyState") == "complete"
         )
 
-        pass_input = self.wait.until(
-            EC.presence_of_element_located((By.ID, "txtPassword-inputEl"))
+        self.wait_loading_mask(timeout=10)
+
+        user_input = self.wait_visible_enabled_element(
+            By.ID,
+            "txtUsername-inputEl",
+            timeout=20,
+        )
+
+        pass_input = self.wait_visible_enabled_element(
+            By.ID,
+            "txtPassword-inputEl",
+            timeout=20,
         )
 
         print("Preenchendo credenciais...")
-        user_input.clear()
-        user_input.send_keys(self.username)
+        self.preencher_input(user_input, self.username)
 
-        pass_input.clear()
-        pass_input.send_keys(self.password)
+        self.preencher_input(pass_input, self.password)
         pass_input.send_keys(Keys.RETURN)
 
         print("Aguardando redirecionamento...")
@@ -336,21 +390,103 @@ class PortalGPS:
         meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
         return meses[dt.tm_mon - 1]
 
+    def _garantir_diretorio_download(self, data_ref=None):
+        data_ref = data_ref or time.localtime()
+        ano = time.strftime("%Y", data_ref)
+        mes = self._mes_pt(data_ref)
+        dia = time.strftime("%d-%m-%Y", data_ref)
+        destino_dir = os.path.join(self.planilhas_dir, ano, mes, dia)
+        os.makedirs(destino_dir, exist_ok=True)
+        return destino_dir
+
+    def _extrair_data_do_nome_arquivo(self, filename):
+        match = re.search(r"(\d{2})-(\d{2})-(\d{4})", filename)
+        if not match:
+            return None
+
+        dia, mes, ano = match.groups()
+        try:
+            return time.strptime(f"{dia}-{mes}-{ano}", "%d-%m-%Y")
+        except ValueError:
+            return None
+
+    def _resolver_conflito_destino(self, destino):
+        if not os.path.exists(destino):
+            return destino
+
+        base, ext = os.path.splitext(destino)
+        contador = 1
+        while True:
+            candidato = f"{base}_{contador}{ext}"
+            if not os.path.exists(candidato):
+                return candidato
+            contador += 1
+
+    def _mesclar_diretorio(self, origem, destino):
+        os.makedirs(destino, exist_ok=True)
+        for item in os.listdir(origem):
+            origem_item = os.path.join(origem, item)
+            destino_item = os.path.join(destino, item)
+
+            if os.path.isdir(origem_item):
+                self._mesclar_diretorio(origem_item, destino_item)
+                if os.path.isdir(origem_item) and not os.listdir(origem_item):
+                    os.rmdir(origem_item)
+                continue
+
+            destino_item = self._resolver_conflito_destino(destino_item)
+            shutil.move(origem_item, destino_item)
+
+        if os.path.isdir(origem) and not os.listdir(origem):
+            os.rmdir(origem)
+
+    def _normalizar_estrutura_planilhas(self):
+        ano_atual = time.strftime("%Y")
+        ano_dir = os.path.join(self.planilhas_dir, ano_atual)
+        os.makedirs(ano_dir, exist_ok=True)
+        meses = {"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
+        extensoes = (".xlsx", ".xls", ".csv")
+
+        for item in os.listdir(self.planilhas_dir):
+            origem = os.path.join(self.planilhas_dir, item)
+
+            if item == ano_atual:
+                continue
+
+            if os.path.isdir(origem) and item.lower() in meses:
+                destino_mes = os.path.join(ano_dir, item.lower())
+                self._mesclar_diretorio(origem, destino_mes)
+                continue
+
+            if os.path.isfile(origem) and item.lower().startswith("criacaousuario") and item.lower().endswith(extensoes):
+                data_arquivo = self._extrair_data_do_nome_arquivo(item)
+                if not data_arquivo:
+                    data_arquivo = time.localtime(os.path.getmtime(origem))
+                destino_dir = self._garantir_diretorio_download(data_arquivo)
+                destino = os.path.join(destino_dir, item)
+
+                if os.path.exists(destino):
+                    if os.path.getsize(origem) == os.path.getsize(destino):
+                        os.remove(origem)
+                        continue
+                    destino = self._resolver_conflito_destino(destino)
+
+                shutil.move(origem, destino)
+
     def _organizar_download(self, filename):
         if not filename:
             return None
 
-        now = time.localtime()
-        mes = self._mes_pt(now)  # ✅ usa o "now" que você já calculou
-        dia = time.strftime("%d-%m-%Y", now)
-
-        destino_dir = os.path.join(self.download_dir, mes, dia)
-        os.makedirs(destino_dir, exist_ok=True)
-
         origem = os.path.join(self.download_dir, filename)
+        data_arquivo = self._extrair_data_do_nome_arquivo(filename) or time.localtime()
+        destino_dir = self._garantir_diretorio_download(data_arquivo)
         destino = os.path.join(destino_dir, filename)
 
+        if os.path.abspath(origem) == os.path.abspath(destino):
+            return destino
+
         try:
+            destino = self._resolver_conflito_destino(destino)
             shutil.move(origem, destino)
             print(f"Arquivo movido para: {destino}")
             return destino  # ✅ caminho final completo

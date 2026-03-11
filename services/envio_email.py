@@ -42,6 +42,22 @@ def _limpar_destinatarios(destinatarios: list[str]) -> list[str]:
     return limpos
 
 
+def _parse_destinatarios_env(valor: str) -> list[str]:
+    return _limpar_destinatarios([item.strip() for item in str(valor or "").split(",")])
+
+
+def _obter_destinatarios_alerta() -> list[str]:
+    configurado = _parse_destinatarios_env(os.getenv("ALERT_EMAIL_RECIPIENTS", ""))
+    if configurado:
+        return configurado
+
+    fallback = _limpar_destinatarios([
+        os.getenv("DEFAULT_FROM_EMAIL", email_config.DEFAULT_FROM_EMAIL),
+        os.getenv("REPLY_TO_GROUP_EMAIL", ""),
+    ])
+    return fallback
+
+
 def _enviar_email_outlook(
     destinatarios: list[str],
     assunto: str,
@@ -226,10 +242,12 @@ def enviar_email(
 
     destinatarios = _limpar_destinatarios(destinatarios)
 
-    safe_test_to = str(os.getenv("SAFE_TEST_TO", "")).strip()
+    safe_test_to = _parse_destinatarios_env(os.getenv("SAFE_TEST_TO", ""))
     if safe_test_to:
-        destinatarios = [safe_test_to]
+        destinatarios = safe_test_to
         logging.info("SAFE_TEST_TO ativo: redirecionando envio para destinatário de teste.")
+
+
 
     if not destinatarios:
         logging.warning("enviar_email: lista de destinatários vazia (após limpeza).")
@@ -256,6 +274,8 @@ def enviar_email(
         return True
 
 
+
+
     if provider == "graph":
         ok = _enviar_email_graph(
             destinatarios,
@@ -266,7 +286,7 @@ def enviar_email(
         )
         if not ok:
             enviar_email(
-                ["governanca.ti@gpssa.com.br"],
+                _obter_destinatarios_alerta(),
                 f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
                 f"O envio de e-mail para {', '.join(destinatarios)} falhou (Graph). Assunto: {assunto}",
             )
@@ -282,7 +302,7 @@ def enviar_email(
         )
         if not ok:
             enviar_email(
-                ["governanca.ti@gpssa.com.br"],
+                _obter_destinatarios_alerta(),
                 f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
                 f"O envio de e-mail para {', '.join(destinatarios)} falhou (Outlook). Assunto: {assunto}",
             )
@@ -291,7 +311,7 @@ def enviar_email(
     if not username or not password:
         logging.error("SMTP_USERNAME/SMTP_PASSWORD não configurados no .env")
         enviar_email(
-            ["governanca.ti@gpssa.com.br"],
+            _obter_destinatarios_alerta(),
             f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
             f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP não configurado). Assunto: {assunto}",
         )
@@ -352,7 +372,7 @@ def enviar_email(
         )
         logging.error(f"Detalhe: {e}")
         enviar_email(
-            ["governanca.ti@gpssa.com.br"],
+            _obter_destinatarios_alerta(),
             f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
             f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP Auth). Detalhe: {e}. Assunto: {assunto}",
         )
@@ -361,7 +381,7 @@ def enviar_email(
     except smtplib.SMTPException as e:
         logging.error(f"Erro SMTP ao enviar email: {e}")
         enviar_email(
-            ["governanca.ti@gpssa.com.br"],
+            _obter_destinatarios_alerta(),
             f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
             f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP). Detalhe: {e}. Assunto: {assunto}",
         )
@@ -370,7 +390,7 @@ def enviar_email(
     except Exception as e:
         logging.exception(f"Erro inesperado ao enviar email: {e}")
         enviar_email(
-            ["governanca.ti@gpssa.com.br"],
+            _obter_destinatarios_alerta(),
             f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
             f"O envio de e-mail para {', '.join(destinatarios)} falhou (Erro inesperado). Detalhe: {e}. Assunto: {assunto}",
         )

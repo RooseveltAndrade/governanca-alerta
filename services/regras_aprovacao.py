@@ -71,7 +71,7 @@ def identificar_destinatarios(
 
     Regras por lookup:
     - PENDENTE LÍDER -> bate nome do líder na aba LIDERES
-    - PENDENTE ÁREA RESPONSÁVEL -> bate ACESSO na aba ACESSO e pega E-mail Líder
+    - PENDENTE ÁREA RESPONSÁVEL -> bate ACESSO na aba ACESSO e pega E-mail Equipe / Líder
     """
 
     # =========================

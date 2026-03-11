@@ -18,11 +18,19 @@ if (-not (Test-Path $PythonExe)) {
     throw "Python não encontrado em: $PythonExe"
 }
 
-$LogsDir = Join-Path $ProjectRoot "logs"
-New-Item -Path $LogsDir -ItemType Directory -Force | Out-Null
 
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$logFile = Join-Path $LogsDir "main_$timestamp.log"
+$now = Get-Date
+$ano = $now.Year
+$mes = $now.ToString("MM")
+$dia = $now.ToString("dd-MM-yyyy")
+$LogsDir = Join-Path $ProjectRoot "logs"
+$LogsDirAno = Join-Path $LogsDir $ano
+$LogsDirMes = Join-Path $LogsDirAno $mes
+$LogsDirDia = Join-Path $LogsDirMes $dia
+New-Item -Path $LogsDirDia -ItemType Directory -Force | Out-Null
+
+$timestamp = $now.ToString("yyyyMMdd_HHmmss")
+$logFile = Join-Path $LogsDirDia "main_$timestamp.log"
 
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"

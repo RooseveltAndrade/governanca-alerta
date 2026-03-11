@@ -154,13 +154,17 @@ DRY_RUN=False
 
 **Modo de Teste:**
 - Para simular sem enviar e-mails reais, use `DRY_RUN=True`.
-- Para redirecionar todos os envios para um e-mail de teste, use `SAFE_TEST_TO=seu@email.com`.
+- Para redirecionar todos os envios para um ou mais e-mails de teste, use `SAFE_TEST_TO=seu@email.com,outro@email.com`.
 
 **Alerta de Falha:**
 - Se algum e-mail não for enviado, um alerta automático é enviado para um email genérico da GPS com o motivo do erro.
 
 **Limitações Teams:**
 - Testes de envio para Teams 1:1 requerem permissões delegadas ou bot registrado. O envio para canais pode ser feito via webhook (não implementado por padrão).
+- Para ativar alertas no Teams no fluxo principal, use `ENABLE_TEAMS_ALERTS=True`.
+- Para testar com segurança sem atingir destinatários reais, use `TEAMS_SAFE_TEST_TO=seu@email.com,outro@email.com`.
+- Se o cache do token delegado não existir, rode `test_teams_graph.py` antes ou use `TEAMS_ALLOW_INTERACTIVE_LOGIN=True` para autenticação manual.
+- Para o sumário executivo no Teams, configure `TEAMS_SUMMARY_RECIPIENTS=email1,email2,...`.
 
 ---
 

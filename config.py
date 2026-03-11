@@ -41,11 +41,11 @@ class EmailConfig:
 
     # ✅ DIRETORIA (ambos até exportação individual)
     DIRETORIA_SISTEMAS: tuple[str, ...] = (
-        os.getenv("EMAIL_DIR_ADRIANA", ""),
+        os.getenv("EMAIL_DIR_THIAGO", ""),
     )
 
     DIRETORIA_APOIO: tuple[str, ...] = (
-        os.getenv("EMAIL_DIR_THIAGO", ""),
+        os.getenv("EMAIL_DIR_ADRIANA", ""),
     )
 
 

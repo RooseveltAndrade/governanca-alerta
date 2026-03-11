@@ -1,3 +1,117 @@
+def _montar_assinatura_sumario(inline_gif=True):
+    # Usa GIF inline (cid) igual ao e-mail principal
+    gif_html = ""
+    if inline_gif:
+        gif_html = (
+            "<img src='cid:assinatura_gif' alt='Assinatura Grupo GPS' width='145' style='width:145px; max-width:145px; height:auto; display:block;'><br>"
+        )
+    email_contato = html.escape(_obter_email_contato_principal())
+    return (
+        f"<div style='margin-top:18px;'>"
+        f"{gif_html}"
+        "<strong>Gestão de Acessos de TI</strong><br>"
+        "Gestão de Acessos | Governança de TI<br>"
+        f"{email_contato}<br>"
+        "</div>"
+    )
+
+
+def _ordenar_envios_sumario(envios):
+    envios_todos = [e.copy() for e in envios]
+    for envio in envios_todos:
+        if envio['cargo'] == 'Apoio':
+            envio['cargo'] = 'Área'
+
+    ordem_cargos = {'Líder': 0, 'Governança': 1, 'Diretoria': 2, 'Área': 3}
+    ordem_status = {
+        'PENDENTE LÍDER': 0,
+        'PENDENTE GOVERNANÇA DE TI': 1,
+        'INATIVAR PENDENTE GOVERNANÇA DE TI': 2,
+        'PENDENTE DIRETORIA DE APOIO': 3,
+        'PENDENTE DIRETORIA DE SISTEMAS': 4,
+        'PENDENTE ÁREA RESPONSÁVEL': 5,
+        'INATIVAR PENDENTE PARA A ÁREA': 6,
+        'PENDENTE ANÁLISE DE GOVERNANÇA DE TI': 7,
+        'PENDENTE INATIVAR ANÁLISE DE GOVERNANÇA DE TI': 8,
+    }
+
+    def sort_key(envio):
+        cargo_ord = ordem_cargos.get(envio['cargo'], 99)
+        status_ord = ordem_status.get(envio['status'].strip().upper(), 99)
+        return (cargo_ord, status_ord, envio['email'])
+
+    envios_todos.sort(key=sort_key)
+    return envios_todos
+
+def _montar_sumario_executivo(envios, saudacao):
+    envios_todos = _ordenar_envios_sumario(envios)
+
+    linhas = []
+    linhas.append(f"<p>{saudacao}</p>")
+    linhas.append("<p>Este é um e-mail automático de relatório, contendo o resumo dos status das notificações de acessos encaminhadas no ciclo atual. Caso haja dúvidas ou necessidade de esclarecimentos, estou à disposição.</p>")
+
+    # Tabela única, ordenada por cargo e status
+    if envios_todos:
+        linhas.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse; margin:0 0 18px 0;'>")
+        linhas.append("<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
+        for envio in envios_todos:
+            linhas.append(
+                f"<tr>"
+                f"<td>{html.escape(envio['email'])}</td>"
+                f"<td>{html.escape(envio['cargo'])}</td>"
+                f"<td>{html.escape(envio['status'])}</td>"
+                f"<td>{envio['qtd']}</td>"
+                f"<td>{', '.join(envio['ids'])}</td>"
+                "</tr>"
+            )
+        linhas.append("</tbody></table>")
+
+    linhas.append(_montar_assinatura_sumario(inline_gif=True))
+    return "\n".join(linhas)
+
+
+def _montar_sumario_executivo_teams(envios, saudacao):
+    envios_todos = _ordenar_envios_sumario(envios)
+    roosevelt_nome = html.escape(_obter_nome_roosevelt())
+    roosevelt_link = _obter_link_teams(_obter_email_roosevelt())
+
+    linhas = []
+    linhas.append("<div>")
+    linhas.append(f"<p><strong>{html.escape(saudacao.rstrip(','))}</strong></p>")
+    linhas.append(
+        "<p>Resumo das notificações de acessos encaminhadas no ciclo atual.</p>"
+    )
+
+    if envios_todos:
+        linhas.append("<div style='height:10px; line-height:10px;'>&nbsp;</div>")
+        linhas.append("<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse;'>")
+        linhas.append("<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
+        for envio in envios_todos:
+            linhas.append(
+                f"<tr>"
+                f"<td>{html.escape(envio['email'])}</td>"
+                f"<td>{html.escape(envio['cargo'])}</td>"
+                f"<td>{html.escape(envio['status'])}</td>"
+                f"<td>{envio['qtd']}</td>"
+                f"<td>{html.escape(', '.join(envio['ids']))}</td>"
+                "</tr>"
+            )
+        linhas.append("</tbody></table>")
+        linhas.append("<div style='height:10px; line-height:10px;'>&nbsp;</div>")
+
+    linhas.append(
+        "<p>Em caso de dúvidas, entre em contato com "
+        f"<a href='{roosevelt_link}'>{roosevelt_nome}</a>.</p>"
+        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        "<p><strong>IMPORTANTE!</strong> Esta é uma mensagem automática. Por favor, não responda.</p>"
+    )
+    linhas.append("</div>")
+    return "\n".join(linhas)
+
+
+def _obter_destinatarios_sumario_teams() -> list[str]:
+    configurado = str(os.getenv("TEAMS_SUMMARY_RECIPIENTS", "")).strip()
+    return [item.strip() for item in configurado.split(',') if item.strip()]
 from datetime import datetime, timedelta
 def _hora_em_janela(hora_atual, janela):
     """
@@ -26,6 +140,58 @@ from services.leitura_planilha import carregar_planilha
 from services.regras_aprovacao import identificar_destinatarios
 from services.diretorio_acessos import DiretorioAcessos
 from services.envio_email import enviar_email
+from services.envio_teams import enviar_mensagem_teams, teams_habilitado
+
+
+def _parse_env_list(nome_variavel: str) -> list[str]:
+    valor = str(os.getenv(nome_variavel, "")).strip()
+    return [item.strip() for item in valor.split(",") if item.strip()]
+
+
+def _obter_email_contato_principal() -> str:
+    return str(os.getenv("REPLY_TO_GROUP_EMAIL", "")).strip()
+
+
+def _obter_email_lais() -> str:
+    return str(os.getenv("EMAIL_GOV_LAIS", "")).strip()
+
+
+def _obter_nome_lais() -> str:
+    return str(os.getenv("CONTACT_LAIS_NAME", "Laís de Oliveira Cosme")).strip()
+
+
+def _obter_email_lucas() -> str:
+    return str(os.getenv("EMAIL_GOV_LUCAS", "")).strip()
+
+
+def _obter_nome_lucas() -> str:
+    return str(os.getenv("CONTACT_LUCAS_NAME", "Lucas de Oliveira Barreto")).strip()
+
+
+def _obter_email_roosevelt() -> str:
+    return str(os.getenv("CONTACT_ROOSEVELT_EMAIL", "")).strip()
+
+
+def _obter_nome_roosevelt() -> str:
+    return str(os.getenv("CONTACT_ROOSEVELT_NAME", "Roosevelt H D Andrade Pimentel")).strip()
+
+
+def _obter_portal_url() -> str:
+    return str(os.getenv("PORTAL_URL", "https://portal.gpssa.com.br/RAR/CriacaoUsuario")).strip()
+
+
+def _obter_link_teams(email: str) -> str:
+    email_limpo = str(email or "").strip()
+    return f"https://teams.microsoft.com/l/chat/0/0?users={html.escape(email_limpo, quote=True)}" if email_limpo else "#"
+
+
+def _obter_destinatarios_sumario_email() -> list[str]:
+    configurado = _parse_env_list("SUMMARY_EMAIL_RECIPIENTS")
+    if configurado:
+        return configurado
+
+    email_principal = _obter_email_contato_principal()
+    return [email_principal] if email_principal else []
 
 # ======================================================
 # 🔹 CONFIG LOG
@@ -36,7 +202,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-DRY_RUN = os.getenv("DRY_RUN", "True") == "True"
+
 
 # caminho da planilha de mapeamento ACESSO -> líder
 CAMINHO_DIRETORIO_ACESSOS = "data/Equipe Solucionadora.xlsx"
@@ -46,9 +212,67 @@ CAMINHO_ASSINATURA_GIF = Path(__file__).resolve().parent / "image" / "assinatura
 ASSINATURA_TEXTO = (
     "\n\nGestão de Acessos de TI\n"
     "Gestão de Acessos | Governança de TI\n"
-    "ti.co.gestao.de.acessos.ti@gpssa.com.br\n"
-    "Fale com a Laís no Teams | Fale com o Lucas no Teams\n"
+    f"{_obter_email_contato_principal()}\n"
+    f"Fale com {_obter_nome_lais()} no Teams | Fale com {_obter_nome_lucas()} no Teams\n"
 )
+
+
+def _montar_mensagem_teams(itens: list[dict], incluir_observacao_lider: bool = False) -> str:
+    quantidade = len(itens)
+    linhas_tabela = []
+    portal_url = html.escape(_obter_portal_url(), quote=True)
+    lais_nome = html.escape(_obter_nome_lais())
+    lucas_nome = html.escape(_obter_nome_lucas())
+    lais_link = _obter_link_teams(_obter_email_lais())
+    lucas_link = _obter_link_teams(_obter_email_lucas())
+
+    for item in itens:
+        id_chamado = html.escape(str(item.get("id", "")))
+        tipo_usuario = html.escape(str(item.get("tipo_usuario", "")))
+        usuario_acesso = html.escape(str(item.get("usuario_acesso", "")))
+        acesso = html.escape(str(item.get("acesso", "")))
+        sistema = html.escape(str(item.get("sistema", "")))
+        linhas_tabela.append(
+            "<tr>"
+            f"<td>{id_chamado}</td>"
+            f"<td>{tipo_usuario}</td>"
+            f"<td>{usuario_acesso}</td>"
+            f"<td>{acesso}</td>"
+            f"<td>{sistema}</td>"
+            "</tr>"
+        )
+
+    observacao_html = ""
+    if incluir_observacao_lider:
+        observacao_html = (
+            "<p><strong>Observação:</strong> Caso o chamado não seja aprovado no prazo de 3 dias, "
+            "contados a partir da data de abertura, ele será cancelado automaticamente.</p>"
+            "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        )
+
+    return (
+        "<div>"
+        "<p><strong>Olá!</strong></p>"
+        f"<p>Você possui <strong>{quantidade}</strong> pendência(s) no Portal Genéricos e Privilegiados.</p>"
+        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse; margin-bottom:10px;'>"
+        "<thead><tr>"
+        "<th>ID</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(linhas_tabela)}</tbody>"
+        "</table>"
+        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        "<p>Para mais informações sobre o chamado e para realizar as ações necessárias (aprovação ou revogação), acesse o "
+        f"<a href='{portal_url}'>Portal Genéricos e Privilegiados</a></p>"
+        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        f"{observacao_html}"
+        "<p>Em caso de dúvidas, entre em contato com "
+        f"<a href='{lais_link}'>{lais_nome}</a> ou "
+        f"<a href='{lucas_link}'>{lucas_nome}</a> via Teams.</p>"
+        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        "<p><strong>IMPORTANTE!</strong> Esta é uma mensagem automática. Por favor, não responda.</p>"
+        "</div>"
+    )
 
 
 # ======================================================
@@ -56,6 +280,12 @@ ASSINATURA_TEXTO = (
 # ======================================================
 
 def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = False):
+    portal_url = html.escape(_obter_portal_url(), quote=True)
+    email_contato = html.escape(_obter_email_contato_principal())
+    lais_nome = html.escape(_obter_nome_lais())
+    lucas_nome = html.escape(_obter_nome_lucas())
+    lais_link = _obter_link_teams(_obter_email_lais())
+    lucas_link = _obter_link_teams(_obter_email_lucas())
 
     linhas_texto = []
     linhas_html = []
@@ -104,12 +334,36 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         except Exception as e:
             logging.warning(f"Não foi possível carregar imagem do email: {e}")
 
+    if incluir_observacao_lider:
+        instrucao_texto = (
+            "Para verificar o chamado, acesse o link "
+            f"{_obter_portal_url()} e realize a análise da solicitação.\n"
+            "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:\n"
+            "(imagem do print)"
+        )
+        instrucao_html = (
+            "<p style='margin:12px 0 8px 0;'>Para verificar o chamado, acesse "
+            f"<a href='{portal_url}'>Portal Genéricos e Privilegiados</a> "
+            "e realize a análise da solicitação de acesso.<br>"
+            "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
+            f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
+        )
+    else:
+        instrucao_texto = (
+            "Para mais informações sobre o chamado e para realizar a devida tratativa, "
+            f"acesse o Portal Genéricos e Privilegiados: {_obter_portal_url()}"
+        )
+        instrucao_html = (
+            "<p style='margin:12px 0 8px 0;'>Para mais informações sobre o chamado e para realizar a devida tratativa, "
+            f"acesse o <a href='{portal_url}'>Portal Genéricos e Privilegiados</a>.</p>"
+        )
+
     assinatura_html = (
         "<p style='margin-top:18px;'><strong>Gestão de Acessos de TI</strong><br>"
         "Gestão de Acessos | Governança de TI<br>"
-        "<a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a><br>"
-        "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br'>Fale com a Laís no Teams</a> | "
-        "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br'>Fale com o Lucas no Teams</a></p>"
+        f"<a href='mailto:{email_contato}'>{email_contato}</a><br>"
+        f"<a href='{lais_link}'>Fale com a {lais_nome} no Teams</a> | "
+        f"<a href='{lucas_link}'>Fale com o {lucas_nome} no Teams</a></p>"
     )
 
     inline_attachments = []
@@ -141,10 +395,10 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
             "<td style='vertical-align:middle; padding-top:0; font-family:Arial, sans-serif; color:#1f3352; text-align:left;'>"
             "<div style='font-size:20px; line-height:1.1; font-weight:700; margin:0;'>Gestão de Acessos de TI</div>"
             "<div style='margin-top:0; color:#666666; font-size:14px; line-height:1.1;'>Gestão de Acessos | Governança de TI</div>"
-            "<div style='margin-top:0; line-height:1.1;'><a href='mailto:ti.co.gestao.de.acessos.ti@gpssa.com.br' style='color:#1f4e9a; font-size:14px;'>ti.co.gestao.de.acessos.ti@gpssa.com.br</a></div>"
+            f"<div style='margin-top:0; line-height:1.1;'><a href='mailto:{email_contato}' style='color:#1f4e9a; font-size:14px;'>{email_contato}</a></div>"
             "<div style='margin-top:0; font-size:13px; line-height:1.1;'>"
-            "<a href='https://teams.microsoft.com/l/chat/0/0?users=lais.cosme@gpssa.com.br' style='color:#1f4e9a;'>Fale com a Laís no Teams</a> | "
-            "<a href='https://teams.microsoft.com/l/chat/0/0?users=lucas.barreto@gpssa.com.br' style='color:#1f4e9a;'>Fale com o Lucas no Teams</a>"
+            f"<a href='{lais_link}' style='color:#1f4e9a;'>Fale com a {lais_nome} no Teams</a> | "
+            f"<a href='{lucas_link}' style='color:#1f4e9a;'>Fale com o {lucas_nome} no Teams</a>"
             "</div>"
             "</td>"
             "</tr>"
@@ -158,10 +412,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
     corpo_texto = (
         "Prezado(a),\n\n"
         f"Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.\n\n"
-        "Para verificar, acesse o link https://portal.gpssa.com.br/RAR/CriacaoUsuario "
-        "e realize a análise da solicitação.\n"
-        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:\n"
-        "(imagem do print)\n\n"
+        f"{instrucao_texto}\n\n"
         "Pendências:\n"
         "ID | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA\n"
         f"{os.linesep.join(linhas_texto)}"
@@ -180,11 +431,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         "</tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
-        "<p style='margin:12px 0 8px 0;'>Para verificar o chamado, acesse "
-        "<a href='https://portal.gpssa.com.br/RAR/CriacaoUsuario'>Portal Genéricos e Privilegiados</a> "
-        "e realize a análise da solicitação de acesso.<br>"
-        "Em seguida, clique no ícone de ação, conforme o exemplo abaixo:</p>"
-        f"<p style='margin:0 0 8px 0;'>{imagem_html}</p>"
+        f"{instrucao_html}"
         f"{observacao_html}"
         f"{frase_duvidas_html}"
         f"{assinatura_html}"
@@ -302,10 +549,27 @@ def executar():
                     )
                 continue
 
-            eh_lider = "LIDER" in _norm_txt(status)
+            status_norm = _norm_txt(status)
+            eh_lider = "LIDER" in status_norm
+            acesso_item = _get_col(linha, "ACESSO", default="")
 
             for email in destinatarios:
-                chave_envio = (email, eh_lider)
+                teams_destinatarios = [email]
+
+                if "AREA" in status_norm and diretorio_acessos and acesso_item:
+                    origem_email = ""
+                    email_lider_area = ""
+
+                    if hasattr(diretorio_acessos, "origem_email_por_acesso"):
+                        origem_email = diretorio_acessos.origem_email_por_acesso(acesso_item)
+
+                    if hasattr(diretorio_acessos, "email_lider_por_acesso"):
+                        email_lider_area = diretorio_acessos.email_lider_por_acesso(acesso_item)
+
+                    if origem_email == "equipe":
+                        teams_destinatarios = [email_lider_area] if email_lider_area else []
+
+                chave_envio = (email, eh_lider, tuple(teams_destinatarios))
                 pendencias_por_email[chave_envio].append({
                     "id": id_chamado,
                     "status": str(status).strip(),
@@ -338,18 +602,37 @@ def executar():
     janela_9 = [("09:00", "09:10")]
     janela_14 = [("14:00", "14:10")]
     janela_9_14 = janela_9 + janela_14
+    ignorar_janela_envio = str(os.getenv("IGNORE_SEND_WINDOW", "False")).strip().lower() in ("1", "true", "yes", "y", "sim")
     emails_diretoria = set(email_config.DIRETORIA_SISTEMAS) | set(email_config.DIRETORIA_APOIO)
 
-    for (email, eh_lider), itens in pendencias_por_email.items():
+
+
+    envios_sumario = []
+    emails_governanca = set(email_config.GOVERNANCA_TI)
+    for (email, eh_lider, teams_destinatarios), itens in pendencias_por_email.items():
         is_diretoria = email in emails_diretoria
+        is_governanca = email in emails_governanca
+        status_item = itens[0].get("status", "").upper() if itens else ""
         if is_diretoria:
-            if not _hora_em_janela(hora_atual, janela_9):
-                logging.info(f"Pulando envio para diretoria ({email}) fora da janela 09:00-09:10")
-                continue
+            cargo = "Diretoria"
+        elif is_governanca:
+            cargo = "Governança"
+        elif eh_lider:
+            cargo = "Líder"
+        elif "AREA" in status_item:
+            cargo = "Área"
         else:
-            if not _hora_em_janela(hora_atual, janela_9_14):
-                logging.info(f"Pulando envio para {email} fora da janela 09:00-09:10/14:00-14:10")
-                continue
+            cargo = "Apoio"
+
+        status = itens[0].get("status", "?") if itens else "?"
+        ids = [str(i.get("id", "")) for i in itens]
+        envios_sumario.append({
+            "email": email,
+            "cargo": cargo,
+            "status": status,
+            "qtd": len(itens),
+            "ids": ids,
+        })
 
         assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
         corpo, corpo_html, inline_attachments = _montar_corpo_agregado(
@@ -357,11 +640,13 @@ def executar():
             incluir_observacao_lider=eh_lider,
         )
 
-        tipo_destinatario = "Líder" if eh_lider else "Governança/Outro"
-        if DRY_RUN:
-            logging.info(f"[SIMULAÇÃO] Envio para {email} | pendências={len(itens)} | tipo={tipo_destinatario}")
-        else:
-            logging.info(f"Enviando para {email} | pendências={len(itens)} | tipo={tipo_destinatario}")
+        # Envio para todos às 9h, exceto diretoria às 14h
+        hora_envio = datetime.now().strftime('%H:%M')
+        hora_int = int(datetime.now().strftime('%H'))
+        if ignorar_janela_envio or (hora_int == 9) or (hora_int == 14 and not is_diretoria):
+            if ignorar_janela_envio:
+                logging.info(f"IGNORE_SEND_WINDOW ativo: enviando fora da janela para {email} | tipo={cargo}")
+            logging.info(f"Enviando para {email} | pendências={len(itens)} | tipo={cargo}")
             enviar_email(
                 [email],
                 assunto,
@@ -369,6 +654,56 @@ def executar():
                 corpo_html=corpo_html,
                 inline_attachments=inline_attachments,
             )
+            if teams_habilitado() and teams_destinatarios:
+                mensagem_teams = _montar_mensagem_teams(
+                    itens,
+                    incluir_observacao_lider=eh_lider,
+                )
+                enviar_mensagem_teams(list(teams_destinatarios), mensagem_teams, content_type="html")
+            elif teams_habilitado() and not teams_destinatarios:
+                logging.info(f"Teams não será enviado para {email} | tipo={cargo} | líder da área não encontrado")
+        else:
+            logging.info(f"Fora do horário de envio para {email} | tipo={cargo}")
+
+    # Envia sumário executivo
+    if envios_sumario:
+        hora_envio = datetime.now().hour
+        if hora_envio < 12:
+            saudacao = "Bom dia a todos,"
+        else:
+            saudacao = "Boa tarde a todos,"
+        sumario_html = _montar_sumario_executivo(envios_sumario, saudacao)
+        sumario_txt = "\n".join([
+            f"{e['email']} | {e['cargo']} | {e['status']} | {e['qtd']} pendências | IDs: {', '.join(e['ids'])}"
+            for e in envios_sumario
+        ])
+        assunto_sumario = "[Sumário Executivo] Relatório de notificações de acessos"
+        destinatarios_sumario = _obter_destinatarios_sumario_email()
+        # Adiciona GIF como inline attachment igual ao e-mail principal
+        inline_attachments_sumario = []
+        if CAMINHO_ASSINATURA_GIF.exists():
+            try:
+                inline_attachments_sumario.append({
+                    "cid": "assinatura_gif",
+                    "name": "assinatura_gif.gif",
+                    "content_type": "image/gif",
+                    "data": CAMINHO_ASSINATURA_GIF.read_bytes(),
+                })
+            except Exception as e:
+                logging.warning(f"Não foi possível carregar GIF da assinatura para o sumário: {e}")
+        if destinatarios_sumario:
+            logging.info(f"Enviando sumário executivo para {destinatarios_sumario}")
+            enviar_email(destinatarios_sumario, assunto_sumario, sumario_txt, corpo_html=sumario_html, inline_attachments=inline_attachments_sumario)
+        else:
+            logging.info("SUMMARY_EMAIL_RECIPIENTS não configurado. Sumário por email não será enviado.")
+        if teams_habilitado():
+            destinatarios_sumario_teams = _obter_destinatarios_sumario_teams()
+            if destinatarios_sumario_teams:
+                sumario_teams_html = _montar_sumario_executivo_teams(envios_sumario, saudacao)
+                logging.info(f"Enviando sumário executivo Teams para {destinatarios_sumario_teams}")
+                enviar_mensagem_teams(destinatarios_sumario_teams, sumario_teams_html, content_type="html")
+            else:
+                logging.info("TEAMS_SUMMARY_RECIPIENTS não configurado. Sumário do Teams não será enviado.")
 
     logging.info(
         f"Finalizado. Destinatários notificados (ou simulados): {len(pendencias_por_email)}"

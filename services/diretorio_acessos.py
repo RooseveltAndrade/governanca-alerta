@@ -28,7 +28,7 @@ def _norm_email(v: str) -> str:
 class DiretorioAcessos:
     """
     Lê 1 arquivo Excel com 2 abas:
-      - ACESSO: colunas esperadas -> ACESSO / E-mail Líder
+    - ACESSO: colunas esperadas -> ACESSO / E-mail Equipe / E-mail Líder
       - LIDERES: colunas esperadas -> Líder / E-mail Líder
 
     Uso:
@@ -41,6 +41,8 @@ class DiretorioAcessos:
         self.caminho_xlsx = caminho_xlsx
 
         self._map_acesso_email: dict[str, str] = {}
+        self._map_acesso_origem: dict[str, str] = {}
+        self._map_acesso_lider_email: dict[str, str] = {}
         self._map_lider_email: dict[str, str] = {}
 
         self._carregar()
@@ -58,19 +60,29 @@ class DiretorioAcessos:
         df_acesso.columns = [str(c).strip() for c in df_acesso.columns]
 
         col_acesso = "ACESSO"
-        col_email = "E-mail Líder"
+        col_email_equipe = "E-mail Equipe"
+        col_email_lider = "E-mail Líder"
 
-        if col_acesso not in df_acesso.columns or col_email not in df_acesso.columns:
+        if col_acesso not in df_acesso.columns:
             raise ValueError(
-                "Aba 'ACESSO' precisa ter as colunas: 'ACESSO' e 'E-mail Líder'."
+                "Aba 'ACESSO' precisa ter a coluna 'ACESSO'."
+            )
+
+        if col_email_equipe not in df_acesso.columns and col_email_lider not in df_acesso.columns:
+            raise ValueError(
+                "Aba 'ACESSO' precisa ter ao menos uma das colunas: 'E-mail Equipe' ou 'E-mail Líder'."
             )
 
         for _, row in df_acesso.iterrows():
             acesso = _norm_text(row.get(col_acesso))
-            email = _norm_email(row.get(col_email))
+            email_equipe = _norm_email(row.get(col_email_equipe)) if col_email_equipe in df_acesso.columns else ""
+            email_lider = _norm_email(row.get(col_email_lider)) if col_email_lider in df_acesso.columns else ""
+            email = email_equipe or email_lider
             if acesso and email:
-                # se repetir, mantém o primeiro (ou sobrescreve — aqui sobrescreve)
                 self._map_acesso_email[acesso] = email
+                self._map_acesso_origem[acesso] = "equipe" if email_equipe else "lider"
+            if acesso and email_lider:
+                self._map_acesso_lider_email[acesso] = email_lider
 
         # =========================
         # ABA: LIDERES
@@ -100,6 +112,12 @@ class DiretorioAcessos:
     # =========================
     def email_por_acesso(self, acesso: str) -> str:
         return self._map_acesso_email.get(_norm_text(acesso), "")
+
+    def origem_email_por_acesso(self, acesso: str) -> str:
+        return self._map_acesso_origem.get(_norm_text(acesso), "")
+
+    def email_lider_por_acesso(self, acesso: str) -> str:
+        return self._map_acesso_lider_email.get(_norm_text(acesso), "")
 
     def email_por_lider(self, lider: str) -> str:
         return self._map_lider_email.get(_norm_text(lider), "")

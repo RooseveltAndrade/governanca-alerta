@@ -16,13 +16,15 @@ $taskCommand = "`"powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$r
 
 $horarios = @("09:00", "14:00")
 $nomes = @("GovernancaAlertaAcessos_09h", "GovernancaAlertaAcessos_14h")
+$diasSemana = "MON,TUE,WED,THU,FRI"
 
 for ($i = 0; $i -lt $horarios.Count; $i++) {
     $args = @(
         "/Create",
         "/TN", $nomes[$i],
         "/TR", $taskCommand,
-        "/SC", "DAILY",
+        "/SC", "WEEKLY",
+        "/D", $diasSemana,
         "/ST", $horarios[$i],
         "/F"
     )
