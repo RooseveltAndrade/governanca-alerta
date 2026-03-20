@@ -1,7 +1,8 @@
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$PythonExe = "",
-    [string]$EntryPoint = "main.py"
+    [string]$EntryPoint = "main.py",
+    [string]$LogPrefix = "main"
 )
 
 $ErrorActionPreference = "Continue"
@@ -30,7 +31,9 @@ $LogsDirDia = Join-Path $LogsDirMes $dia
 New-Item -Path $LogsDirDia -ItemType Directory -Force | Out-Null
 
 $timestamp = $now.ToString("yyyyMMdd_HHmmss")
-$logFile = Join-Path $LogsDirDia "main_$timestamp.log"
+$safeLogPrefix = if ([string]::IsNullOrWhiteSpace($LogPrefix)) { "main" } else { $LogPrefix }
+$logFile = Join-Path $LogsDirDia "${safeLogPrefix}_$timestamp.log"
+$alertScript = Join-Path $PSScriptRoot "send_failure_alert.py"
 
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -52,6 +55,19 @@ try {
 }
 catch {
     "ERRO - $($_.Exception.Message)" | Tee-Object -FilePath $logFile -Append | Out-Null
+
+    if (Test-Path $alertScript) {
+        try {
+            & $PythonExe $alertScript `
+                --subject "[ALERTA] Falha na execução automática - $EntryPoint" `
+                --message $_.Exception.Message `
+                --log-file $logFile | Out-Null
+        }
+        catch {
+            "ERRO - Falha ao enviar alerta de execução: $($_.Exception.Message)" | Tee-Object -FilePath $logFile -Append | Out-Null
+        }
+    }
+
     exit 1
 }
 finally {

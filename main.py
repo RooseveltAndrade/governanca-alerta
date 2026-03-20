@@ -139,7 +139,7 @@ from automation.portal_selenium import PortalGPS
 from services.leitura_planilha import carregar_planilha
 from services.regras_aprovacao import identificar_destinatarios
 from services.diretorio_acessos import DiretorioAcessos
-from services.envio_email import enviar_email
+from services.envio_email import enviar_alerta_operacional, enviar_email
 from services.envio_teams import enviar_mensagem_teams, teams_habilitado
 
 
@@ -547,6 +547,17 @@ def executar():
                         f"status='{status_atual}' | validacao='{validacao}' | "
                         f"acesso='{acesso}' | lider='{lider}'"
                     )
+                    enviar_alerta_operacional(
+                        f"[ALERTA] Chamado sem destinatário resolvido: {id_chamado}",
+                        (
+                            f"Nenhum destinatário foi encontrado para o chamado {id_chamado}.\n"
+                            f"Linha: {index}\n"
+                            f"Status atual: {status_atual}\n"
+                            f"Validação: {validacao}\n"
+                            f"Acesso: {acesso}\n"
+                            f"Líder do acesso: {lider}\n"
+                        ),
+                    )
                 continue
 
             status_norm = _norm_txt(status)
@@ -626,13 +637,6 @@ def executar():
 
         status = itens[0].get("status", "?") if itens else "?"
         ids = [str(i.get("id", "")) for i in itens]
-        envios_sumario.append({
-            "email": email,
-            "cargo": cargo,
-            "status": status,
-            "qtd": len(itens),
-            "ids": ids,
-        })
 
         assunto = f"[Aprovação Pendente] Você possui {len(itens)} pendência(s) no Portal"
         corpo, corpo_html, inline_attachments = _montar_corpo_agregado(
@@ -647,13 +651,23 @@ def executar():
             if ignorar_janela_envio:
                 logging.info(f"IGNORE_SEND_WINDOW ativo: enviando fora da janela para {email} | tipo={cargo}")
             logging.info(f"Enviando para {email} | pendências={len(itens)} | tipo={cargo}")
-            enviar_email(
+            email_enviado = enviar_email(
                 [email],
                 assunto,
                 corpo,
                 corpo_html=corpo_html,
                 inline_attachments=inline_attachments,
             )
+            if email_enviado:
+                envios_sumario.append({
+                    "email": email,
+                    "cargo": cargo,
+                    "status": status,
+                    "qtd": len(itens),
+                    "ids": ids,
+                })
+            else:
+                logging.warning(f"Envio não confirmado para {email}; destinatário não será incluído no sumário.")
             if teams_habilitado() and teams_destinatarios:
                 mensagem_teams = _montar_mensagem_teams(
                     itens,

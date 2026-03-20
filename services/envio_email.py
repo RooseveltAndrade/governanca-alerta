@@ -58,6 +58,20 @@ def _obter_destinatarios_alerta() -> list[str]:
     return fallback
 
 
+def enviar_alerta_operacional(assunto: str, corpo: str) -> bool:
+    destinatarios_alerta = _obter_destinatarios_alerta()
+    if not destinatarios_alerta:
+        logging.warning("Destinatários de alerta não configurados; alerta operacional não será enviado.")
+        return False
+
+    return enviar_email(
+        destinatarios_alerta,
+        assunto,
+        corpo,
+        suppress_failure_alert=True,
+    )
+
+
 def _enviar_email_outlook(
     destinatarios: list[str],
     assunto: str,
@@ -233,6 +247,7 @@ def enviar_email(
     corpo: str,
     corpo_html: str | None = None,
     inline_attachments: list[dict] | None = None,
+    suppress_failure_alert: bool = False,
 ) -> bool:
     """
     Envia email via SMTP.
@@ -284,9 +299,8 @@ def enviar_email(
             corpo_html=corpo_html,
             inline_attachments=inline_attachments,
         )
-        if not ok:
-            enviar_email(
-                _obter_destinatarios_alerta(),
+        if not ok and not suppress_failure_alert:
+            enviar_alerta_operacional(
                 f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
                 f"O envio de e-mail para {', '.join(destinatarios)} falhou (Graph). Assunto: {assunto}",
             )
@@ -300,9 +314,8 @@ def enviar_email(
             corpo_html=corpo_html,
             inline_attachments=inline_attachments,
         )
-        if not ok:
-            enviar_email(
-                _obter_destinatarios_alerta(),
+        if not ok and not suppress_failure_alert:
+            enviar_alerta_operacional(
                 f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
                 f"O envio de e-mail para {', '.join(destinatarios)} falhou (Outlook). Assunto: {assunto}",
             )
@@ -310,11 +323,11 @@ def enviar_email(
 
     if not username or not password:
         logging.error("SMTP_USERNAME/SMTP_PASSWORD não configurados no .env")
-        enviar_email(
-            _obter_destinatarios_alerta(),
-            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
-            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP não configurado). Assunto: {assunto}",
-        )
+        if not suppress_failure_alert:
+            enviar_alerta_operacional(
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP não configurado). Assunto: {assunto}",
+            )
         return False
 
     msg = EmailMessage()
@@ -371,27 +384,27 @@ def enviar_email(
             "Possíveis causas: senha errada, SMTP AUTH bloqueado, MFA exigindo App Password.",
         )
         logging.error(f"Detalhe: {e}")
-        enviar_email(
-            _obter_destinatarios_alerta(),
-            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
-            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP Auth). Detalhe: {e}. Assunto: {assunto}",
-        )
+        if not suppress_failure_alert:
+            enviar_alerta_operacional(
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP Auth). Detalhe: {e}. Assunto: {assunto}",
+            )
         return False
 
     except smtplib.SMTPException as e:
         logging.error(f"Erro SMTP ao enviar email: {e}")
-        enviar_email(
-            _obter_destinatarios_alerta(),
-            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
-            f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP). Detalhe: {e}. Assunto: {assunto}",
-        )
+        if not suppress_failure_alert:
+            enviar_alerta_operacional(
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (SMTP). Detalhe: {e}. Assunto: {assunto}",
+            )
         return False
 
     except Exception as e:
         logging.exception(f"Erro inesperado ao enviar email: {e}")
-        enviar_email(
-            _obter_destinatarios_alerta(),
-            f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
-            f"O envio de e-mail para {', '.join(destinatarios)} falhou (Erro inesperado). Detalhe: {e}. Assunto: {assunto}",
-        )
+        if not suppress_failure_alert:
+            enviar_alerta_operacional(
+                f"[ALERTA] Falha ao enviar e-mail para {', '.join(destinatarios)}",
+                f"O envio de e-mail para {', '.join(destinatarios)} falhou (Erro inesperado). Detalhe: {e}. Assunto: {assunto}",
+            )
         return False

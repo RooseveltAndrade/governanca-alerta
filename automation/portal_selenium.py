@@ -21,13 +21,16 @@ class PortalGPS:
 
     LOGIN_URL = "https://portal.gpssa.com.br/gps/login.aspx"
 
-    def __init__(self, fast_mode=True):
+    def __init__(self, fast_mode=True, filtro_exportacao="PENDENTES", prefixo_arquivo="CriacaoUsuario"):
         load_dotenv()
 
         self.username = os.getenv("PORTAL_USER")
         self.password = os.getenv("PORTAL_PASS")
 
         self.fast_mode = fast_mode
+        self.filtro_exportacao = str(filtro_exportacao or "PENDENTES").strip().upper()
+        self.prefixo_arquivo = str(prefixo_arquivo or "CriacaoUsuario").strip()
+        self._prefixos_conhecidos = {"CriacaoUsuario", "IntegracaoDesligamentos", self.prefixo_arquivo}
         self.driver = None
         self.wait = None
         self.planilhas_dir = os.path.abspath(os.path.join(os.getcwd(), "planilhas"))
@@ -291,12 +294,11 @@ class PortalGPS:
     # 🔹 EXPORTAÇÃO
     # =====================================================
 
-    def click_pendentes(self):
-        def try_click():
-            return self.driver.execute_script(
-                """
+    def _build_filter_click_script(self):
+        return """
                 const labels = Array.from(document.querySelectorAll('label'));
-                const label = labels.find(l => l.textContent.trim().toUpperCase() === 'PENDENTES');
+                const filtro = String(arguments[0] || '').trim().toUpperCase();
+                const label = labels.find(l => l.textContent.trim().toUpperCase() === filtro);
                 if (!label) return false;
                 const input = label.control || label.previousElementSibling || label.nextElementSibling;
                 if (input && input.tagName === 'INPUT') {
@@ -306,6 +308,14 @@ class PortalGPS:
                 }
                 return true;
                 """
+
+    def click_filtro(self, nome_filtro):
+        filtro = str(nome_filtro or "").strip().upper()
+
+        def try_click():
+            return self.driver.execute_script(
+                self._build_filter_click_script(),
+                filtro,
             )
 
         self.driver.switch_to.default_content()
@@ -321,7 +331,7 @@ class PortalGPS:
             self.driver.switch_to.frame(frame)
             try:
                 if try_click():
-                    print(f"Clique rápido PENDENTES no iframe #{idx}")
+                    print(f"Clique rápido {filtro} no iframe #{idx}")
                     self.driver.switch_to.default_content()
                     return True
             except Exception:
@@ -329,6 +339,12 @@ class PortalGPS:
 
         self.driver.switch_to.default_content()
         return False
+
+    def click_pendentes(self):
+        return self.click_filtro("PENDENTES")
+
+    def click_todos(self):
+        return self.click_filtro("TODOS")
 
     def click_excel(self):
         def try_click():
@@ -366,16 +382,18 @@ class PortalGPS:
         self.driver.switch_to.default_content()
         return False
 
-    def wait_download_complete(self, timeout=60):
+    def wait_download_complete(self, timeout=60, existing_files=None):
         seconds = 0
         exts = (".xlsx", ".xls", ".csv")
+        arquivos_existentes = set(existing_files or [])
         while seconds < timeout:
             files = os.listdir(self.download_dir)
-            has_file = any(f.lower().endswith(exts) for f in files)
+            arquivos_novos = [f for f in files if f.lower().endswith(exts) and f not in arquivos_existentes]
+            has_file = any(arquivos_novos)
             has_partial = any(f.endswith(".crdownload") for f in files)
             if has_file and not has_partial:
                 newest = max(
-                    (f for f in files if f.lower().endswith(exts)),
+                    arquivos_novos,
                     key=lambda f: os.path.getmtime(os.path.join(self.download_dir, f)),
                     default=None,
                 )
@@ -422,6 +440,24 @@ class PortalGPS:
                 return candidato
             contador += 1
 
+    def _arquivo_eh_relatorio(self, nome_arquivo):
+        nome_normalizado = str(nome_arquivo or "").lower()
+        return any(nome_normalizado.startswith(prefixo.lower()) for prefixo in self._prefixos_conhecidos)
+
+    def _arquivo_eh_relatorio_atual(self, nome_arquivo):
+        nome_normalizado = str(nome_arquivo or "").lower()
+        return nome_normalizado.startswith(self.prefixo_arquivo.lower())
+
+    def _renomear_prefixo_arquivo(self, filename, data_arquivo=None):
+        base, ext = os.path.splitext(filename)
+        match = re.search(r"(\d{2}-\d{2}-\d{4}(?: \d{2}#\d{2})?)", base)
+        if match:
+            return f"{self.prefixo_arquivo}-{match.group(1)}{ext}"
+
+        data_arquivo = data_arquivo or time.localtime()
+        data_formatada = time.strftime("%d-%m-%Y %H#%M", data_arquivo)
+        return f"{self.prefixo_arquivo}-{data_formatada}{ext}"
+
     def _mesclar_diretorio(self, origem, destino):
         os.makedirs(destino, exist_ok=True)
         for item in os.listdir(origem):
@@ -458,7 +494,7 @@ class PortalGPS:
                 self._mesclar_diretorio(origem, destino_mes)
                 continue
 
-            if os.path.isfile(origem) and item.lower().startswith("criacaousuario") and item.lower().endswith(extensoes):
+            if os.path.isfile(origem) and self._arquivo_eh_relatorio(item) and item.lower().endswith(extensoes):
                 data_arquivo = self._extrair_data_do_nome_arquivo(item)
                 if not data_arquivo:
                     data_arquivo = time.localtime(os.path.getmtime(origem))
@@ -479,26 +515,31 @@ class PortalGPS:
 
         origem = os.path.join(self.download_dir, filename)
         data_arquivo = self._extrair_data_do_nome_arquivo(filename) or time.localtime()
+        nome_final = self._renomear_prefixo_arquivo(filename, data_arquivo)
         destino_dir = self._garantir_diretorio_download(data_arquivo)
-        destino = os.path.join(destino_dir, filename)
+        destino = os.path.join(destino_dir, nome_final)
 
         if os.path.abspath(origem) == os.path.abspath(destino):
             return destino
 
-        try:
-            destino = self._resolver_conflito_destino(destino)
-            shutil.move(origem, destino)
-            print(f"Arquivo movido para: {destino}")
-            return destino  # ✅ caminho final completo
-        except Exception as e:
-            print(f"Erro ao mover arquivo: {e}")
-            return None
+        destino = self._resolver_conflito_destino(destino)
+
+        for tentativa in range(10):
+            try:
+                shutil.move(origem, destino)
+                print(f"Arquivo movido para: {destino}")
+                return destino  # ✅ caminho final completo
+            except Exception as e:
+                if tentativa == 9:
+                    print(f"Erro ao mover arquivo: {e}")
+                    return None
+                time.sleep(1)
 
     # =====================================================
     # 🔹 FLUXO COMPLETO
     # =====================================================
 
-    def exportar_relatorio_pendentes(self):
+    def exportar_relatorio(self):
 
         print("Abrindo menu Controle de Acesso...")
 
@@ -525,34 +566,40 @@ class PortalGPS:
 
         time.sleep(2)
 
-        print("Clicando em PENDENTES...")
-        self.click_pendentes()
+        print(f"Clicando em {self.filtro_exportacao}...")
+        if not self.click_filtro(self.filtro_exportacao):
+            raise Exception(f"Filtro {self.filtro_exportacao} não encontrado")
         self.wait_loading_mask()
 
         time.sleep(2)
+
+        arquivos_antes = set(os.listdir(self.download_dir))
+
+        # remove arquivos antigos do mesmo relatório para garantir download novo
+        for f in list(arquivos_antes):
+            if self._arquivo_eh_relatorio_atual(f) and f.lower().endswith((".xls", ".xlsx", ".csv")):
+                try:
+                    os.remove(os.path.join(self.download_dir, f))
+                except Exception:
+                    pass
+
+        arquivos_antes = set(os.listdir(self.download_dir))
 
         print("Clicando em Excel...")
         self.click_excel()
 
         print("✅ Exportação acionada!")
 
-        arquivos_antes = set(os.listdir(self.download_dir))
-
-        # remove arquivos antigos do mesmo relatório para garantir download novo
-        for f in list(arquivos_antes):
-            if f.lower().startswith("criacaousuario") and f.lower().endswith((".xls", ".xlsx")):
-                try:
-                    os.remove(os.path.join(self.download_dir, f))
-                except Exception:
-                    pass
-
-        filename = self.wait_download_complete(timeout=90)
+        filename = self.wait_download_complete(timeout=90, existing_files=arquivos_antes)
         caminho_final = self._organizar_download(filename)
 
         if not caminho_final:
             raise Exception("Não foi possível organizar o arquivo baixado.")
 
         return caminho_final  # ✅ retorna caminho final
+
+    def exportar_relatorio_pendentes(self):
+        return self.exportar_relatorio()
 
     # =====================================================
     # 🔹 EXECUÇÃO
@@ -562,7 +609,7 @@ class PortalGPS:
         try:
             self.iniciar_driver()
             self.login()
-            caminho_final = self.exportar_relatorio_pendentes()
+            caminho_final = self.exportar_relatorio()
             return caminho_final  # ✅ retorna para ser usado depois (ler planilha / enviar emails)
         finally:
             self.encerrar()

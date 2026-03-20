@@ -12,20 +12,44 @@ if (-not (Test-Path $runnerScript)) {
     throw "Script de execução não encontrado: $runnerScript"
 }
 
-$taskCommand = "`"powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$runnerScript`" -ProjectRoot `"$ProjectRoot`""
-
-$horarios = @("09:00", "14:00")
-$nomes = @("GovernancaAlertaAcessos_09h", "GovernancaAlertaAcessos_14h")
 $diasSemana = "MON,TUE,WED,THU,FRI"
 
-for ($i = 0; $i -lt $horarios.Count; $i++) {
+$tarefas = @(
+    @{
+        Nome = "GovernancaAlertaAcessos_09h"
+        Horario = "09:00"
+        EntryPoint = "main.py"
+        LogPrefix = "main"
+    },
+    @{
+        Nome = "GovernancaAlertaAcessos_14h"
+        Horario = "14:00"
+        EntryPoint = "main.py"
+        LogPrefix = "main"
+    },
+    @{
+        Nome = "GovernancaDesligamentos_0930"
+        Horario = "09:30"
+        EntryPoint = "main_desligamentos.py"
+        LogPrefix = "desligamentos"
+    },
+    @{
+        Nome = "GovernancaDesligamentos_1430"
+        Horario = "14:30"
+        EntryPoint = "main_desligamentos.py"
+        LogPrefix = "desligamentos"
+    }
+)
+
+$tarefas | ForEach-Object {
+    $taskCommand = "`"powershell.exe`" -NoProfile -ExecutionPolicy Bypass -File `"$runnerScript`" -ProjectRoot `"$ProjectRoot`" -EntryPoint `"$($_.EntryPoint)`" -LogPrefix `"$($_.LogPrefix)`""
     $args = @(
         "/Create",
-        "/TN", $nomes[$i],
+        "/TN", $_.Nome,
         "/TR", $taskCommand,
         "/SC", "WEEKLY",
         "/D", $diasSemana,
-        "/ST", $horarios[$i],
+        "/ST", $_.Horario,
         "/F"
     )
 
@@ -42,8 +66,8 @@ for ($i = 0; $i -lt $horarios.Count; $i++) {
 
     & schtasks.exe @args | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Falha ao criar tarefa agendada ($nomes[$i]). ExitCode=$LASTEXITCODE"
+        throw "Falha ao criar tarefa agendada ($($_.Nome)). ExitCode=$LASTEXITCODE"
     }
 
-    schtasks.exe /Query /TN $nomes[$i] /V /FO LIST
+    schtasks.exe /Query /TN $_.Nome /V /FO LIST
 }

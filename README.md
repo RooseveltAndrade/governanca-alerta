@@ -2,7 +2,7 @@
 # 🛡️ Governança - Alerta Automático de Aprovação
 
 
-Automação para monitoramento de chamados de concessão de acesso no Portal GPS, identificando pendências de aprovação e enviando alertas automáticos para os responsáveis (Líder, Governança ou Diretoria) via Microsoft Graph API (M365). O sistema também suporta fallback para SMTP/Outlook e possui alertas automáticos de falha.
+Automação para monitoramento de chamados de concessão de acesso no Portal GPS, identificando pendências de aprovação e casos de desligamento, com envio automático de notificações e sumários via Microsoft Graph API (M365). O sistema também suporta fallback para SMTP/Outlook e possui alertas automáticos de falha.
 
 ---
 
@@ -17,7 +17,8 @@ Automatizar o processo de:
 5. Notificar automaticamente via Microsoft Graph (e-mail corporativo M365)
 6. (Opcional) Notificar via Outlook/SMTP se configurado
 7. (Opcional) Testes de integração com Teams (ver limitações)
-6. Repetir alertas enquanto o chamado permanecer pendente
+8. Repetir alertas enquanto o chamado permanecer pendente
+9. Identificar desligamentos e terceiros com contrato cancelado para atuação do time de Gestão de Acessos
 
 ---
 
@@ -35,6 +36,11 @@ Mapeamento Nome → Email
 Envio de Notificação
 ```
 
+Existem dois fluxos principais no projeto:
+
+- Aprovações de acessos: exporta chamados `PENDENTES` e notifica Líder, Governança, Área ou Diretoria.
+- Desligamentos: exporta chamados em `TODOS`, filtra critérios de desligamento e gera notificações/sumário específicos.
+
 ## 📂 Estrutura do Projeto
 
 ```bash
@@ -45,7 +51,9 @@ governanca-alerta/
 │
 ├── services/
 │   ├── leitura_planilha.py       # Normalização e leitura do Excel
+│   ├── leitura_desligamentos.py  # Regras de leitura e filtro da planilha de desligamentos
 │   ├── regras_aprovacao.py       # Regras de identificação do responsável
+│   ├── regras_desligamentos.py   # Regras de destinatários do fluxo de desligamentos
 │   ├── diretorio_emails.py       # Match nome → email
 │   └── envio_email.py            # Envio via Microsoft Graph, SMTP ou Outlook
 │
@@ -55,6 +63,9 @@ governanca-alerta/
 │
 ├── config.py                     # Configurações de e-mail (Graph, SMTP, Outlook) e emails fixos
 ├── main.py                       # Orquestrador principal
+├── main_desligamentos.py         # Orquestrador do fluxo de desligamentos
+├── export_integracao_desligamentos.py # Exportação isolada da planilha de desligamentos
+├── preview_desligamentos.py      # Prévia terminal sem envio real
 ├── .env                          # Variáveis sensíveis
 └── requirements.txt
 ```
@@ -128,6 +139,40 @@ DIRETORIA	Diretores (Sistemas + Apoio)
 
 ---
 
+## 🧠 Regras de Desligamentos
+
+O fluxo de desligamentos utiliza a planilha `IntegracaoDesligamentos-*.xls` exportada com filtro `TODOS`.
+
+Critérios atualmente considerados:
+
+1. `STATUS ATUAL = ATIVO` e `STATUS FOLHA = DESLIGADO`
+2. `STATUS ATUAL = ATIVO`, `TIPO USUÁRIO = TERCEIRO` e `CONTRATO = CANCELADO`
+
+Regras de comunicação:
+
+- `Terceiro` ou `Genérico`
+    - E-mail: líder do usuário do acesso + grupo de Gestão de Acessos (`REPLY_TO_GROUP_EMAIL`)
+    - Teams: líder + Laís + Lucas
+
+- `Sócio` ou `Conselheiro`
+    - E-mail: grupo de Gestão de Acessos
+    - Teams: Laís + Lucas
+
+- `Terceiro` com `CONTRATO = CANCELADO`
+    - E-mail: grupo de Gestão de Acessos
+    - Teams: Laís + Lucas
+
+Sumário de desligamentos:
+
+- E-mail: Kleyton + Roosevelt
+- Teams: Kleyton + Roosevelt
+
+Modo de operação atual:
+
+- `DESLIGAMENTOS_ONLY_SUMMARY=True`: não envia notificações individuais reais; envia somente o sumário.
+
+---
+
 
 ## 📧 Envio de E-mail (Microsoft 365)
 
@@ -155,6 +200,9 @@ DRY_RUN=False
 **Modo de Teste:**
 - Para simular sem enviar e-mails reais, use `DRY_RUN=True`.
 - Para redirecionar todos os envios para um ou mais e-mails de teste, use `SAFE_TEST_TO=seu@email.com,outro@email.com`.
+- Para redirecionar somente o fluxo de desligamentos, use `DESLIGAMENTOS_SAFE_TEST_TO=seu@email.com`.
+- Para desabilitar Teams apenas no fluxo de desligamentos, use `DESLIGAMENTOS_DISABLE_TEAMS=True`.
+- Para enviar somente o sumário no fluxo de desligamentos, use `DESLIGAMENTOS_ONLY_SUMMARY=True`.
 
 **Alerta de Falha:**
 - Se algum e-mail não for enviado, um alerta automático é enviado para um email genérico da GPS com o motivo do erro.
@@ -207,14 +255,26 @@ Principais:
 python main.py
 ```
 
+Fluxo de desligamentos:
+
+```bash
+python main_desligamentos.py
+```
+
+Prévia terminal sem envio real:
+
+```bash
+python preview_desligamentos.py
+```
+
 ---
 
 ## 🕒 Automação no Windows Server (Task Scheduler)
 
 Para não rodar manualmente no terminal, use os scripts em `scripts/`:
 
-- `scripts/run_main.ps1`: executa `main.py` com Python da `.venv` e grava log em `logs/`
-- `scripts/install_task.ps1`: cria tarefa agendada diária no Windows
+- `scripts/run_main.ps1`: executa um entrypoint Python com a `.venv` e grava log em `logs/`
+- `scripts/install_task.ps1`: cria tarefas agendadas no Windows
 
 ### 1) Testar execução do script (manual)
 
@@ -225,9 +285,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_main.ps1
 ```
 
 
-### 2) Criar as tarefas agendadas (09:00 e 14:00)
+### 2) Criar as tarefas agendadas
 
-O script já está preparado para criar duas tarefas diárias:
+O script já está preparado para criar quatro tarefas em dias úteis:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_task.ps1
@@ -236,6 +296,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_task.ps1
 Isso criará:
 - GovernancaAlertaAcessos_09h (09:00)
 - GovernancaAlertaAcessos_14h (14:00)
+- GovernancaDesligamentos_0930 (09:30)
+- GovernancaDesligamentos_1430 (14:30)
 
 Se quiser rodar com uma conta de serviço específica, adicione os parâmetros -RunAsUser e -RunAsPassword.
 
@@ -252,6 +314,8 @@ schtasks /Query /FO LIST | Select-String "GovernancaAlertaAcessos"
 ```powershell
 schtasks /Run /TN "GovernancaAlertaAcessos_09h"
 schtasks /Run /TN "GovernancaAlertaAcessos_14h"
+schtasks /Run /TN "GovernancaDesligamentos_0930"
+schtasks /Run /TN "GovernancaDesligamentos_1430"
 ```
 
 ### 5) Logs da execução
@@ -260,6 +324,7 @@ Os logs ficam em:
 
 ```text
 logs/main_yyyyMMdd_HHmmss.log
+logs/desligamentos_yyyyMMdd_HHmmss.log
 ```
 
 
@@ -271,6 +336,8 @@ logs/main_yyyyMMdd_HHmmss.log
 ```powershell
 schtasks /Delete /TN "GovernancaAlertaAcessos_09h" /F
 schtasks /Delete /TN "GovernancaAlertaAcessos_14h" /F
+schtasks /Delete /TN "GovernancaDesligamentos_0930" /F
+schtasks /Delete /TN "GovernancaDesligamentos_1430" /F
 ```
 
 ---
