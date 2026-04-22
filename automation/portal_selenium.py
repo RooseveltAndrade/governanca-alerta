@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import time
+import unicodedata
 
 from selenium.common.exceptions import ElementNotInteractableException
 
@@ -21,7 +22,7 @@ class PortalGPS:
 
     LOGIN_URL = "https://portal.gpssa.com.br/gps/login.aspx"
 
-    def __init__(self, fast_mode=True, filtro_exportacao="PENDENTES", prefixo_arquivo="CriacaoUsuario"):
+    def __init__(self, fast_mode=True, filtro_exportacao="PENDENTES", prefixo_arquivo="CriacaoUsuario", download_timeout=90):
         load_dotenv()
 
         self.username = os.getenv("PORTAL_USER")
@@ -30,6 +31,7 @@ class PortalGPS:
         self.fast_mode = fast_mode
         self.filtro_exportacao = str(filtro_exportacao or "PENDENTES").strip().upper()
         self.prefixo_arquivo = str(prefixo_arquivo or "CriacaoUsuario").strip()
+        self.download_timeout = int(download_timeout or 90)
         self._prefixos_conhecidos = {"CriacaoUsuario", "IntegracaoDesligamentos", self.prefixo_arquivo}
         self.driver = None
         self.wait = None
@@ -117,6 +119,23 @@ class PortalGPS:
             value,
         )
 
+    def _input_has_value(self, element) -> bool:
+        try:
+            value = self.driver.execute_script("return arguments[0].value;", element)
+        except Exception:
+            value = None
+        return bool(str(value or "").strip())
+
+    def _click_login_button(self) -> bool:
+        try:
+            btn = self.driver.find_element(By.XPATH, "//button[normalize-space()='Entrar']")
+            if btn.is_displayed() and btn.is_enabled():
+                self.js_click(btn)
+                return True
+        except Exception:
+            pass
+        return False
+
     def wait_loading_mask(self, timeout=20):
         try:
             WebDriverWait(self.driver, timeout).until_not(
@@ -165,7 +184,17 @@ class PortalGPS:
         self.preencher_input(user_input, self.username)
 
         self.preencher_input(pass_input, self.password)
-        pass_input.send_keys(Keys.RETURN)
+        if not self._input_has_value(pass_input):
+            self.driver.execute_script(
+                "arguments[0].value = arguments[1];"
+                "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+                "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+                pass_input,
+                self.password,
+            )
+
+        if not self._click_login_button():
+            pass_input.send_keys(Keys.RETURN)
 
         print("Aguardando redirecionamento...")
         self.wait.until(EC.url_contains("Portal.aspx"))
@@ -294,29 +323,30 @@ class PortalGPS:
     # 🔹 EXPORTAÇÃO
     # =====================================================
 
-    def _build_filter_click_script(self):
-        return """
-                const labels = Array.from(document.querySelectorAll('label'));
-                const filtro = String(arguments[0] || '').trim().toUpperCase();
-                const label = labels.find(l => l.textContent.trim().toUpperCase() === filtro);
-                if (!label) return false;
-                const input = label.control || label.previousElementSibling || label.nextElementSibling;
-                if (input && input.tagName === 'INPUT') {
-                    input.click();
-                } else {
-                    label.click();
-                }
+    def _build_tab_click_script(self):
+        return r"""
+                const candidatos = Array.isArray(arguments[0]) ? arguments[0] : [arguments[0]];
+                const normalize = (value) => String(value || '')
+                    .normalize('NFD')
+                    .replace(/\p{Diacritic}/gu, '')
+                    .trim()
+                    .toUpperCase();
+                const candidatosNorm = candidatos.map(normalize).filter(Boolean);
+                const spans = Array.from(document.querySelectorAll('span'));
+                const alvo = spans.find(el => {
+                    const texto = normalize(el.textContent);
+                    return candidatosNorm.some(c => texto === c || texto.includes(c));
+                });
+                if (!alvo) return false;
+                let btn = alvo.closest('a,li,div');
+                if (btn) btn.click();
+                else alvo.click();
                 return true;
                 """
 
-    def click_filtro(self, nome_filtro):
-        filtro = str(nome_filtro or "").strip().upper()
-
+    def click_tab(self, nomes: list[str]) -> bool:
         def try_click():
-            return self.driver.execute_script(
-                self._build_filter_click_script(),
-                filtro,
-            )
+            return self.driver.execute_script(self._build_tab_click_script(), nomes)
 
         self.driver.switch_to.default_content()
         try:
@@ -331,6 +361,127 @@ class PortalGPS:
             self.driver.switch_to.frame(frame)
             try:
                 if try_click():
+                    print(f"Aba ativa no iframe #{idx}")
+                    self.driver.switch_to.default_content()
+                    return True
+            except Exception:
+                pass
+
+        self.driver.switch_to.default_content()
+        return False
+
+    def _build_filter_click_script(self):
+        return r"""
+                const labels = Array.from(document.querySelectorAll('label'));
+                const filtros = Array.isArray(arguments[0]) ? arguments[0] : [arguments[0]];
+                const normalize = (value) => String(value || '')
+                    .normalize('NFD')
+                    .replace(/\p{Diacritic}/gu, '')
+                    .trim()
+                    .toUpperCase();
+                const filtrosNorm = filtros.map(normalize).filter(Boolean);
+                let label = labels.find(l => {
+                    const texto = normalize(l.textContent);
+                    return filtrosNorm.some(f => texto === f);
+                });
+                if (!label) {
+                    label = labels.find(l => {
+                        const texto = normalize(l.textContent);
+                        return filtrosNorm.some(f => texto.includes(f));
+                    });
+                }
+                if (!label) return false;
+                const input = label.control
+                    || label.querySelector('input')
+                    || label.previousElementSibling
+                    || label.nextElementSibling;
+                if (input && input.tagName === 'INPUT') {
+                    input.click();
+                    if (!input.checked) {
+                        input.checked = true;
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    return input.checked === true;
+                }
+                label.click();
+                return true;
+                """
+
+    def click_filtro(self, nome_filtro):
+        filtro = str(nome_filtro or "").strip().upper()
+
+        def _norm_text(value: str) -> str:
+            s = str(value or "").strip()
+            if not s:
+                return ""
+            s = unicodedata.normalize("NFKD", s)
+            s = "".join(ch for ch in s if not unicodedata.combining(ch))
+            return s.upper()
+
+        candidatos = [filtro]
+        normalizado = _norm_text(filtro)
+        if normalizado and normalizado not in candidatos:
+            candidatos.append(normalizado)
+
+        def try_click():
+            return self.driver.execute_script(
+                self._build_filter_click_script(),
+                candidatos,
+            )
+
+        def try_click_xpath():
+            xpath_exato = f"//label[normalize-space()='{filtro}']"
+            xpath_parcial = f"//label[contains(normalize-space(), '{filtro}') ]"
+            for xp in (xpath_exato, xpath_parcial):
+                try:
+                    labels = self.driver.find_elements(By.XPATH, xp)
+                except Exception:
+                    labels = []
+                for label in labels:
+                    try:
+                        if not label.is_displayed():
+                            continue
+                        self.js_click(label)
+                        return True
+                    except Exception:
+                        continue
+            return False
+
+        def is_selected() -> bool:
+            try:
+                return bool(self.driver.execute_script(
+                    "const f = String(arguments[0] || '').trim().toUpperCase();"
+                    "const normalize = (value) => String(value || '')"
+                    ".normalize('NFD').replace(/\\p{Diacritic}/gu, '')"
+                    ".trim().toUpperCase();"
+                    "const labels = Array.from(document.querySelectorAll('label'));"
+                    "const label = labels.find(l => normalize(l.textContent) === normalize(f));"
+                    "if (!label) return false;"
+                    "const input = label.control || label.querySelector('input') || label.previousElementSibling || label.nextElementSibling;"
+                    "return !!(input && input.checked);",
+                    filtro,
+                ))
+            except Exception:
+                return False
+
+        def try_click_and_check() -> bool:
+            if try_click() or try_click_xpath():
+                return is_selected()
+            return False
+
+        self.driver.switch_to.default_content()
+        try:
+            if try_click_and_check():
+                return True
+        except Exception:
+            pass
+
+        frames = self.driver.find_elements(By.TAG_NAME, "iframe")
+        for idx, frame in enumerate(frames):
+            self.driver.switch_to.default_content()
+            self.driver.switch_to.frame(frame)
+            try:
+                if try_click_and_check():
                     print(f"Clique rápido {filtro} no iframe #{idx}")
                     self.driver.switch_to.default_content()
                     return True
@@ -566,6 +717,14 @@ class PortalGPS:
 
         time.sleep(2)
 
+        # Garante que a aba correta esteja ativa antes de clicar nos filtros.
+        self.click_tab([
+            "Solicitação Genérico e Privilegiado",
+            "Solicitacao Generico e Privilegiado",
+            "Concessão de acesso Genérico e Privilegiado",
+            "Concessao de acesso Generico e Privilegiado",
+        ])
+
         print(f"Clicando em {self.filtro_exportacao}...")
         if not self.click_filtro(self.filtro_exportacao):
             raise Exception(f"Filtro {self.filtro_exportacao} não encontrado")
@@ -575,9 +734,9 @@ class PortalGPS:
 
         arquivos_antes = set(os.listdir(self.download_dir))
 
-        # remove arquivos antigos do mesmo relatório para garantir download novo
+        # remove relatorios antigos para garantir download novo
         for f in list(arquivos_antes):
-            if self._arquivo_eh_relatorio_atual(f) and f.lower().endswith((".xls", ".xlsx", ".csv")):
+            if self._arquivo_eh_relatorio(f) and f.lower().endswith((".xls", ".xlsx", ".csv")):
                 try:
                     os.remove(os.path.join(self.download_dir, f))
                 except Exception:
@@ -590,7 +749,7 @@ class PortalGPS:
 
         print("✅ Exportação acionada!")
 
-        filename = self.wait_download_complete(timeout=90, existing_files=arquivos_antes)
+        filename = self.wait_download_complete(timeout=self.download_timeout, existing_files=arquivos_antes)
         caminho_final = self._organizar_download(filename)
 
         if not caminho_final:

@@ -53,12 +53,11 @@ def _montar_sumario_executivo(envios, saudacao):
     # Tabela única, ordenada por cargo e status
     if envios_todos:
         linhas.append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse; margin:0 0 18px 0;'>")
-        linhas.append("<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
+        linhas.append("<thead><tr><th>Destinatário</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
         for envio in envios_todos:
             linhas.append(
                 f"<tr>"
                 f"<td>{html.escape(envio['email'])}</td>"
-                f"<td>{html.escape(envio['cargo'])}</td>"
                 f"<td>{html.escape(envio['status'])}</td>"
                 f"<td>{envio['qtd']}</td>"
                 f"<td>{', '.join(envio['ids'])}</td>"
@@ -85,12 +84,11 @@ def _montar_sumario_executivo_teams(envios, saudacao):
     if envios_todos:
         linhas.append("<div style='height:10px; line-height:10px;'>&nbsp;</div>")
         linhas.append("<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse;'>")
-        linhas.append("<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
+        linhas.append("<thead><tr><th>Destinatário</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead><tbody>")
         for envio in envios_todos:
             linhas.append(
                 f"<tr>"
                 f"<td>{html.escape(envio['email'])}</td>"
-                f"<td>{html.escape(envio['cargo'])}</td>"
                 f"<td>{html.escape(envio['status'])}</td>"
                 f"<td>{envio['qtd']}</td>"
                 f"<td>{html.escape(', '.join(envio['ids']))}</td>"
@@ -228,6 +226,7 @@ def _montar_mensagem_teams(itens: list[dict], incluir_observacao_lider: bool = F
 
     for item in itens:
         id_chamado = html.escape(str(item.get("id", "")))
+        status_atual = html.escape(str(item.get("status", "")))
         tipo_usuario = html.escape(str(item.get("tipo_usuario", "")))
         usuario_acesso = html.escape(str(item.get("usuario_acesso", "")))
         acesso = html.escape(str(item.get("acesso", "")))
@@ -235,6 +234,7 @@ def _montar_mensagem_teams(itens: list[dict], incluir_observacao_lider: bool = F
         linhas_tabela.append(
             "<tr>"
             f"<td>{id_chamado}</td>"
+            f"<td>{status_atual}</td>"
             f"<td>{tipo_usuario}</td>"
             f"<td>{usuario_acesso}</td>"
             f"<td>{acesso}</td>"
@@ -257,7 +257,7 @@ def _montar_mensagem_teams(itens: list[dict], incluir_observacao_lider: bool = F
         "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
         "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse; margin-bottom:10px;'>"
         "<thead><tr>"
-        "<th>ID</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
+        "<th>ID</th><th>STATUS ATUAL</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
         "</tr></thead>"
         f"<tbody>{''.join(linhas_tabela)}</tbody>"
         "</table>"
@@ -292,18 +292,20 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
 
     for item in itens:
         id_chamado = item.get("id", "")
+        status_atual = item.get("status", "")
         tipo_usuario = item.get("tipo_usuario", "")
         usuario_acesso = item.get("usuario_acesso", "")
         acesso = item.get("acesso", "")
         sistema = item.get("sistema", "")
 
         linhas_texto.append(
-            f"- {id_chamado} | {tipo_usuario} | {usuario_acesso} | {acesso} | {sistema}"
+            f"- {id_chamado} | {status_atual} | {tipo_usuario} | {usuario_acesso} | {acesso} | {sistema}"
         )
 
         linhas_html.append(
             "<tr>"
             f"<td>{html.escape(str(id_chamado))}</td>"
+            f"<td>{html.escape(str(status_atual))}</td>"
             f"<td>{html.escape(str(tipo_usuario))}</td>"
             f"<td>{html.escape(str(usuario_acesso))}</td>"
             f"<td>{html.escape(str(acesso))}</td>"
@@ -414,7 +416,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         f"Você possui {len(itens)} aprovação(ões) pendente(s) no Portal.\n\n"
         f"{instrucao_texto}\n\n"
         "Pendências:\n"
-        "ID | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA\n"
+        "ID | STATUS ATUAL | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA\n"
         f"{os.linesep.join(linhas_texto)}"
         f"{observacao_texto}"
         f"{frase_duvidas}"
@@ -427,7 +429,7 @@ def _montar_corpo_agregado(itens: list[dict], incluir_observacao_lider: bool = F
         f"<p style='margin:0 0 8px 0;'>Você possui {len(itens)} aprovação(ões) pendente(s) no Portal Genéricos e Privilegiados.</p>"
         "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse; margin:0;'>"
         "<thead><tr>"
-        "<th>ID</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
+        "<th>ID</th><th>STATUS ATUAL</th><th>TIPO DE USUÁRIO</th><th>USUÁRIO DO ACESSO</th><th>ACESSO</th><th>SISTEMA</th>"
         "</tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
@@ -547,16 +549,57 @@ def executar():
                         f"status='{status_atual}' | validacao='{validacao}' | "
                         f"acesso='{acesso}' | lider='{lider}'"
                     )
+                    assunto_alerta = f"[ALERTA] Não foi encontrado um destinatário: {id_chamado}"
+                    mensagem_intro = "Não foi possível identificar um destinatário para o chamado abaixo."
+                    corpo_texto = (
+                        f"{assunto_alerta}\n\n"
+                        f"{mensagem_intro}\n\n"
+                        f"ID: {id_chamado}\n"
+                        f"Linha: {index}\n"
+                        f"Status atual: {status_atual}\n"
+                        f"Validação: {validacao}\n"
+                        f"Acesso: {acesso}\n"
+                        f"Líder do acesso: {lider}\n"
+                    )
+                    corpo_html = (
+                        "<div style='font-family:Arial, sans-serif; font-size:16px; color:#1a1a1a; line-height:1.35;'>"
+                        f"<p><strong>{html.escape(assunto_alerta)}</strong></p>"
+                        f"<p>{html.escape(mensagem_intro)}</p>"
+                        "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;'>"
+                        "<thead><tr><th>ID</th><th>Linha</th><th>Status atual</th><th>Validação</th><th>Acesso</th><th>Líder do acesso</th></tr></thead>"
+                        "<tbody><tr>"
+                        f"<td>{html.escape(str(id_chamado))}</td>"
+                        f"<td>{html.escape(str(index))}</td>"
+                        f"<td>{html.escape(str(status_atual))}</td>"
+                        f"<td>{html.escape(str(validacao))}</td>"
+                        f"<td>{html.escape(str(acesso))}</td>"
+                        f"<td>{html.escape(str(lider))}</td>"
+                        "</tr></tbody>"
+                        "</table>"
+                        "</div>"
+                    )
+                    teams_html = (
+                        "<div>"
+                        f"<p><strong>{html.escape(assunto_alerta)}</strong></p>"
+                        f"<p>{html.escape(mensagem_intro)}</p>"
+                        "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse;'>"
+                        "<thead><tr><th>ID</th><th>Linha</th><th>Status atual</th><th>Validação</th><th>Acesso</th><th>Líder do acesso</th></tr></thead>"
+                        "<tbody><tr>"
+                        f"<td>{html.escape(str(id_chamado))}</td>"
+                        f"<td>{html.escape(str(index))}</td>"
+                        f"<td>{html.escape(str(status_atual))}</td>"
+                        f"<td>{html.escape(str(validacao))}</td>"
+                        f"<td>{html.escape(str(acesso))}</td>"
+                        f"<td>{html.escape(str(lider))}</td>"
+                        "</tr></tbody>"
+                        "</table>"
+                        "</div>"
+                    )
                     enviar_alerta_operacional(
-                        f"[ALERTA] Chamado sem destinatário resolvido: {id_chamado}",
-                        (
-                            f"Nenhum destinatário foi encontrado para o chamado {id_chamado}.\n"
-                            f"Linha: {index}\n"
-                            f"Status atual: {status_atual}\n"
-                            f"Validação: {validacao}\n"
-                            f"Acesso: {acesso}\n"
-                            f"Líder do acesso: {lider}\n"
-                        ),
+                        assunto_alerta,
+                        corpo_texto,
+                        corpo_html=corpo_html,
+                        teams_html=teams_html,
                     )
                 continue
 
@@ -688,7 +731,7 @@ def executar():
             saudacao = "Boa tarde a todos,"
         sumario_html = _montar_sumario_executivo(envios_sumario, saudacao)
         sumario_txt = "\n".join([
-            f"{e['email']} | {e['cargo']} | {e['status']} | {e['qtd']} pendências | IDs: {', '.join(e['ids'])}"
+            f"{e['email']} | {e['status']} | {e['qtd']} pendências | IDs: {', '.join(e['ids'])}"
             for e in envios_sumario
         ])
         assunto_sumario = "[Sumário Executivo] Relatório de notificações de acessos"
@@ -722,6 +765,6 @@ def executar():
     logging.info(
         f"Finalizado. Destinatários notificados (ou simulados): {len(pendencias_por_email)}"
     )
-        
+
 if __name__ == "__main__":
     executar()

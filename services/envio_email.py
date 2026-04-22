@@ -8,6 +8,7 @@ import msal
 from email.message import EmailMessage
 
 from config import email_config
+from services.envio_teams import enviar_mensagem_teams
 
 
 def _as_bool(v: str, default: bool = False) -> bool:
@@ -58,18 +59,34 @@ def _obter_destinatarios_alerta() -> list[str]:
     return fallback
 
 
-def enviar_alerta_operacional(assunto: str, corpo: str) -> bool:
+def enviar_alerta_operacional(
+    assunto: str,
+    corpo: str,
+    corpo_html: str | None = None,
+    inline_attachments: list[dict] | None = None,
+    teams_html: str | None = None,
+) -> bool:
     destinatarios_alerta = _obter_destinatarios_alerta()
     if not destinatarios_alerta:
         logging.warning("Destinatários de alerta não configurados; alerta operacional não será enviado.")
         return False
 
-    return enviar_email(
+    ok_email = enviar_email(
         destinatarios_alerta,
         assunto,
         corpo,
+        corpo_html=corpo_html,
+        inline_attachments=inline_attachments,
         suppress_failure_alert=True,
     )
+
+    if teams_html:
+        enviar_mensagem_teams(destinatarios_alerta, teams_html, content_type="html")
+    else:
+        mensagem_teams = f"{assunto}\n\n{corpo}".strip()
+        enviar_mensagem_teams(destinatarios_alerta, mensagem_teams, content_type="text")
+
+    return ok_email
 
 
 def _enviar_email_outlook(

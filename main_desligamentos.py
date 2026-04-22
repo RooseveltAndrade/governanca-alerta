@@ -136,6 +136,37 @@ def _ordenar_envios_sumario_desligamentos(envios: list[dict]) -> list[dict]:
     return sorted((envio.copy() for envio in envios), key=chave)
 
 
+def _agrupar_envios_sumario_desligamentos(envios: list[dict]) -> list[dict]:
+    agrupados: dict[tuple[str, str], dict] = {}
+    for envio in envios:
+        destinatario = str(envio.get("destinatario", "")).strip()
+        status = str(envio.get("status", "")).strip()
+        key = (destinatario, status)
+
+        ids = [str(i).strip() for i in envio.get("ids", []) if str(i).strip()]
+
+        if key not in agrupados:
+            agrupados[key] = {
+                "destinatario": destinatario,
+                "cargo": envio.get("cargo", ""),
+                "status": status,
+                "regra": envio.get("regra", ""),
+                "ids": ids,
+            }
+            continue
+
+        existentes = set(agrupados[key]["ids"])
+        for item_id in ids:
+            if item_id not in existentes:
+                agrupados[key]["ids"].append(item_id)
+                existentes.add(item_id)
+
+    for item in agrupados.values():
+        item["qtd"] = len(item.get("ids", []))
+
+    return list(agrupados.values())
+
+
 def _normalizar_item(linha) -> dict[str, str]:
     return {
         "id": str(linha.get("ID", "")).strip(),
@@ -206,7 +237,7 @@ def _obter_inline_attachments_assinatura() -> list[dict]:
     return inline_attachments
 
 
-def _montar_corpo_notificacao_desligamentos(itens: list[dict]) -> tuple[str, str, list[dict]]:
+def _montar_corpo_notificacao_desligamentos(itens: list[dict], is_lider: bool) -> tuple[str, str, list[dict]]:
     portal_url = _obter_portal_url()
     linhas_texto = []
     linhas_html = []
@@ -240,12 +271,19 @@ def _montar_corpo_notificacao_desligamentos(itens: list[dict]) -> tuple[str, str
     corpo_texto = (
         "Prezado(a),\n\n"
         "Foram identificados acessos que exigem atuação no Portal Genéricos e Privilegiados em função de desligamento ou cancelamento de contrato.\n\n"
-        "Para mais informações sobre o chamado e para realizar a devida tratativa, acesse o portal: "
-        f"{portal_url}\n\n"
         "Pendências identificadas:\n"
         "ID | TIPO DE USUÁRIO | USUÁRIO DO ACESSO | ACESSO | SISTEMA | STATUS ATUAL | STATUS FOLHA | CONTRATO\n"
         f"{'\n'.join(linhas_texto)}\n\n"
-        "Em caso de dúvidas, o time de Gestão de Acessos de TI está à disposição."
+    )
+    if is_lider:
+        corpo_texto += (
+            "O acesso acima está atualmente vinculado a um recurso desligado ou sem contrato vigente. Caso o time de Gestão de Acessos de TI não receba a indicação de um novo responsável ou de um novo número de contrato, o acesso será revogado.\n\n"
+            "Além disso, é de sua responsabilidade providenciar imediatamente a troca de senha, garantindo que o antigo responsável não mantenha qualquer possibilidade de uso do acesso.\n\n"
+        )
+    corpo_texto += (
+        "Para mais informações sobre o chamado e para realizar a devida tratativa, acesse o portal: "
+        f"{portal_url}\n\n"
+        "IMPORTANTE! Esta é uma mensagem automática. Por favor, não responda."
     )
 
     corpo_html = (
@@ -258,16 +296,23 @@ def _montar_corpo_notificacao_desligamentos(itens: list[dict]) -> tuple[str, str
         "</tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
+    )
+    if is_lider:
+        corpo_html += (
+            "<p style='margin:12px 0 8px 0;'>O acesso acima está atualmente vinculado a um recurso desligado ou sem contrato vigente. Caso o time de Gestão de Acessos de TI não receba a indicação de um novo responsável ou de um novo número de contrato, o acesso será revogado.</p>"
+            "<p style='margin:12px 0 8px 0;'>Além disso, é de sua responsabilidade providenciar imediatamente a troca de senha, garantindo que o antigo responsável não mantenha qualquer possibilidade de uso do acesso.</p>"
+        )
+    corpo_html += (
         "<p style='margin:12px 0 8px 0;'>Para mais informações sobre o chamado e para realizar a devida tratativa, acesse o "
         f"<a href='{html.escape(portal_url, quote=True)}'>Portal Genéricos e Privilegiados</a>.</p>"
-        "<p style='margin:12px 0 8px 0;'>Em caso de dúvidas, o time de Gestão de Acessos de TI está à disposição.</p>"
+        "<p style='margin:12px 0 8px 0;'><strong>IMPORTANTE!</strong> Esta é uma mensagem automática. Por favor, não responda.</p>"
         f"{_montar_assinatura_html()}"
         "</div>"
     )
     return corpo_texto, corpo_html, _obter_inline_attachments_assinatura()
 
 
-def _montar_mensagem_teams_desligamentos(itens: list[dict]) -> str:
+def _montar_mensagem_teams_desligamentos(itens: list[dict], is_lider: bool) -> str:
     portal_url = html.escape(_obter_portal_url(), quote=True)
     linhas = []
     for item in itens:
@@ -284,7 +329,7 @@ def _montar_mensagem_teams_desligamentos(itens: list[dict]) -> str:
             "</tr>"
         )
 
-    return (
+    base_html = (
         "<div>"
         "<p><strong>Olá!</strong></p>"
         f"<p>Você possui <strong>{len(itens)}</strong> caso(s) para atuação em função de desligamento ou cancelamento de contrato.</p>"
@@ -294,10 +339,22 @@ def _montar_mensagem_teams_desligamentos(itens: list[dict]) -> str:
         f"<tbody>{''.join(linhas)}</tbody>"
         "</table>"
         "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
-        f"<p>Para mais informações sobre o chamado e para realizar a devida tratativa, acesse o <a href='{portal_url}'>Portal Genéricos e Privilegiados</a>.</p>"
-        "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
-        "<p><strong>IMPORTANTE!</strong> Esta é uma mensagem automática. Por favor, não responda.</p>"
-        "</div>"
+    )
+
+    extra_html = ""
+    if is_lider:
+        extra_html = (
+            "<p>O acesso acima está atualmente vinculado a um recurso desligado ou sem contrato vigente. Caso o time de Gestão de Acessos de TI não receba a indicação de um novo responsável ou de um novo número de contrato, o acesso será revogado.</p>"
+            "<p>Além disso, é de sua responsabilidade providenciar imediatamente a troca de senha, garantindo que o antigo responsável não mantenha qualquer possibilidade de uso do acesso.</p>"
+        )
+
+    return (
+        base_html
+        + extra_html
+        + f"<p>Para mais informações sobre o chamado e para realizar a devida tratativa, acesse o <a href='{portal_url}'>Portal Genéricos e Privilegiados</a>.</p>"
+        + "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
+        + "<p><strong>IMPORTANTE!</strong> Esta é uma mensagem automática. Por favor, não responda.</p>"
+        + "</div>"
     )
 
 
@@ -347,12 +404,11 @@ def _montar_sumario_desligamentos(envios: list[dict]) -> tuple[str, str, str, li
     linhas_html = []
     for envio in envios_ordenados:
         linhas_texto.append(
-            f"{envio['destinatario']} | {envio['cargo']} | {envio['status']} | {envio['qtd']} caso(s) | IDs: {', '.join(envio['ids'])}"
+            f"{envio['destinatario']} | {envio['status']} | {envio['qtd']} caso(s) | IDs: {', '.join(envio['ids'])}"
         )
         linhas_html.append(
             "<tr>"
             f"<td>{html.escape(envio['destinatario'])}</td>"
-            f"<td>{html.escape(envio['cargo'])}</td>"
             f"<td>{html.escape(envio['status'])}</td>"
             f"<td>{envio['qtd']}</td>"
             f"<td>{html.escape(', '.join(envio['ids']))}</td>"
@@ -366,7 +422,7 @@ def _montar_sumario_desligamentos(envios: list[dict]) -> tuple[str, str, str, li
         "<p>Prezados,</p>"
         "<p>Este é um e-mail automático de relatório, contendo o resumo dos status das notificações de desligamentos encaminhadas no ciclo atual.</p>"
         "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;'>"
-        "<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead>"
+        "<thead><tr><th>Destinatário</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
         f"{_montar_assinatura_html()}"
@@ -382,7 +438,6 @@ def _montar_sumario_desligamentos_teams(envios: list[dict]) -> str:
         linhas_html.append(
             "<tr>"
             f"<td>{html.escape(envio['destinatario'])}</td>"
-            f"<td>{html.escape(envio['cargo'])}</td>"
             f"<td>{html.escape(envio['status'])}</td>"
             f"<td>{envio['qtd']}</td>"
             f"<td>{html.escape(', '.join(envio['ids']))}</td>"
@@ -395,7 +450,7 @@ def _montar_sumario_desligamentos_teams(envios: list[dict]) -> str:
         "<p>Resumo das notificações de desligamentos encaminhadas no ciclo atual.</p>"
         "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
         "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse;'>"
-        "<thead><tr><th>Destinatário</th><th>Cargo</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead>"
+        "<thead><tr><th>Destinatário</th><th>Status</th><th>Qtd Pendências</th><th>IDs</th></tr></thead>"
         f"<tbody>{''.join(linhas_html)}</tbody>"
         "</table>"
         "<div style='height:10px; line-height:10px;'>&nbsp;</div>"
@@ -411,6 +466,7 @@ def executar() -> str | None:
         fast_mode=True,
         filtro_exportacao="TODOS",
         prefixo_arquivo="IntegracaoDesligamentos",
+        download_timeout=300,
     )
     caminho_planilha = portal.executar()
 
@@ -450,19 +506,98 @@ def executar() -> str | None:
 
     for _, linha in df_filtrado.iterrows():
         item = _normalizar_item(linha)
+
+        # 🔒 VALIDAÇÃO FINAL (ANTI-BUG - GARANTE REGRA DE NEGÓCIO)
+        status_atual = item["status_atual"].upper()
+        status_folha = item["status_folha"].upper()
+        tipo_usuario = item["tipo_usuario"].upper()
+        contrato = item["contrato"].upper()
+
+        regra_valida = (
+            ("ATIVO" in status_atual and "DESLIGADO" in status_folha)
+            or
+            (
+                "ATIVO" in status_atual and
+                ("TERCEIRO" in tipo_usuario or "GENÉRICO" in tipo_usuario) and
+                "CANCELADO" in contrato
+            )
+        )
+
+        if not regra_valida:
+            logging.warning(
+                f"[IGNORADO - FORA DA REGRA] ID {item['id']} | "
+                f"{status_atual} | {status_folha} | {tipo_usuario} | {contrato}"
+            )
+            continue
+        # 🔒 FIM DA VALIDAÇÃO FINAL
+
         resolucao = identificar_destinatarios_desligamento(linha, diretorio_acessos)
 
         if not resolucao["destinatarios_email"] and not resolucao["destinatarios_teams"]:
+            if tipo_usuario == "CLT":
+                assunto_alerta = f"[ALERTA] Desligamento CLT sem destinatários resolvidos: {item['id']}"
+                aviso_extra = (
+                    "ATENÇÃO: Não foi enviado notificação pois o usuário é CLT e não há regra específica para esse caso."
+                )
+            else:
+                assunto_alerta = f"[ALERTA] Desligamento sem destinatários resolvidos: {item['id']}"
+                aviso_extra = ""
+
+            corpo_texto = (
+                f"{assunto_alerta}\n\n"
+                f"ID: {item['id']}\n"
+                f"Usuário do acesso: {item['usuario_acesso']}\n"
+                f"Tipo: {item['tipo_usuario']}\n"
+                f"Acesso: {item['acesso']}\n"
+                f"Sistema: {item['sistema']}\n"
+                f"Motivo: {_descricao_motivo(item['motivo_atuacao'])}"
+            )
+            if aviso_extra:
+                corpo_texto = f"{corpo_texto}\n\n{aviso_extra}"
+
+            corpo_html = (
+                "<div style='font-family:Arial, sans-serif; font-size:16px; color:#1a1a1a; line-height:1.35;'>"
+                f"<p><strong>{html.escape(assunto_alerta)}</strong></p>"
+                "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;'>"
+                "<thead><tr><th>ID</th><th>Usuário do acesso</th><th>Tipo</th><th>Acesso</th><th>Sistema</th><th>Motivo</th></tr></thead>"
+                "<tbody><tr>"
+                f"<td>{html.escape(str(item['id']))}</td>"
+                f"<td>{html.escape(str(item['usuario_acesso']))}</td>"
+                f"<td>{html.escape(str(item['tipo_usuario']))}</td>"
+                f"<td>{html.escape(str(item['acesso']))}</td>"
+                f"<td>{html.escape(str(item['sistema']))}</td>"
+                f"<td>{html.escape(_descricao_motivo(item['motivo_atuacao']))}</td>"
+                "</tr></tbody>"
+                "</table>"
+            )
+            if aviso_extra:
+                corpo_html += f"<p style='margin-top:10px;'><strong>{html.escape(aviso_extra)}</strong></p>"
+            corpo_html += f"{_montar_assinatura_html()}" "</div>"
+
+            teams_html = (
+                "<div>"
+                f"<p><strong>{html.escape(assunto_alerta)}</strong></p>"
+                "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse;'>"
+                "<thead><tr><th>ID</th><th>Usuário do acesso</th><th>Tipo</th><th>Acesso</th><th>Sistema</th><th>Motivo</th></tr></thead>"
+                "<tbody><tr>"
+                f"<td>{html.escape(str(item['id']))}</td>"
+                f"<td>{html.escape(str(item['usuario_acesso']))}</td>"
+                f"<td>{html.escape(str(item['tipo_usuario']))}</td>"
+                f"<td>{html.escape(str(item['acesso']))}</td>"
+                f"<td>{html.escape(str(item['sistema']))}</td>"
+                f"<td>{html.escape(_descricao_motivo(item['motivo_atuacao']))}</td>"
+                "</tr></tbody>"
+                "</table>"
+            )
+            if aviso_extra:
+                teams_html += f"<p><strong>{html.escape(aviso_extra)}</strong></p>"
+            teams_html += "</div>"
             enviar_alerta_operacional(
-                f"[ALERTA] Desligamento sem destinatários resolvidos: {item['id']}",
-                (
-                    f"Nenhum destinatário foi encontrado para o registro de desligamento {item['id']}.\n"
-                    f"Usuário do acesso: {item['usuario_acesso']}\n"
-                    f"Tipo: {item['tipo_usuario']}\n"
-                    f"Acesso: {item['acesso']}\n"
-                    f"Sistema: {item['sistema']}\n"
-                    f"Motivo: {_descricao_motivo(item['motivo_atuacao'])}\n"
-                ),
+                assunto_alerta,
+                corpo_texto,
+                corpo_html=corpo_html,
+                inline_attachments=_obter_inline_attachments_assinatura(),
+                teams_html=teams_html,
             )
             continue
 
@@ -471,10 +606,11 @@ def executar() -> str | None:
 
         for destinatario in resolucao["destinatarios_teams"]:
             envios_teams[destinatario].append(item)
-
+            
     for destinatario, itens in envios_email.items():
         assunto = f"[Desligamentos] Você possui {len(itens)} caso(s) para atuação no Portal"
-        corpo_texto, corpo_html, inline_attachments = _montar_corpo_notificacao_desligamentos(itens)
+        cargo = _rotulo_cargo_destinatario(destinatario)
+        corpo_texto, corpo_html, inline_attachments = _montar_corpo_notificacao_desligamentos(itens, cargo == "Líder")
         if somente_sumario:
             logging.info(f"DESLIGAMENTOS_ONLY_SUMMARY ativo: não enviando email individual para {destinatario}.")
             envios_sumario.append(
@@ -509,7 +645,8 @@ def executar() -> str | None:
 
     if _teams_desligamentos_habilitado():
         for destinatario, itens in envios_teams.items():
-            mensagem = _montar_mensagem_teams_desligamentos(itens)
+            cargo = _rotulo_cargo_destinatario(destinatario)
+            mensagem = _montar_mensagem_teams_desligamentos(itens, cargo == "Líder")
             if somente_sumario:
                 logging.info(f"DESLIGAMENTOS_ONLY_SUMMARY ativo: não enviando Teams individual para {destinatario}.")
                 envios_sumario.append(
@@ -537,7 +674,8 @@ def executar() -> str | None:
                 )
 
     if envios_sumario:
-        assunto_sumario, corpo_texto_sumario, corpo_html_sumario, inline_attachments_sumario = _montar_sumario_desligamentos(envios_sumario)
+        envios_sumario_unicos = _agrupar_envios_sumario_desligamentos(envios_sumario)
+        assunto_sumario, corpo_texto_sumario, corpo_html_sumario, inline_attachments_sumario = _montar_sumario_desligamentos(envios_sumario_unicos)
         destinatarios_sumario = obter_destinatarios_sumario_desligamentos()
         if destinatarios_sumario["email"]:
             enviar_email(
@@ -548,7 +686,7 @@ def executar() -> str | None:
                 inline_attachments=inline_attachments_sumario,
             )
         if _teams_desligamentos_habilitado() and destinatarios_sumario["teams"]:
-            enviar_mensagem_teams(destinatarios_sumario["teams"], _montar_sumario_desligamentos_teams(envios_sumario), content_type="html")
+            enviar_mensagem_teams(destinatarios_sumario["teams"], _montar_sumario_desligamentos_teams(envios_sumario_unicos), content_type="html")
 
     return caminho_planilha
 
